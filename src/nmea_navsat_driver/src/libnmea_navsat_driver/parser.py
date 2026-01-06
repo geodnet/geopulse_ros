@@ -1,0 +1,277 @@
+# Software License Agreement (BSD License)
+#
+# Copyright (c) 2013, Eric Perko
+# All rights reserved.
+
+import re
+import math
+
+
+def safe_float(field):
+    try:
+        return float(field)
+    except ValueError:
+        return float("NaN")
+
+
+def safe_int(field):
+    try:
+        return int(field)
+    except ValueError:
+        return 0
+
+
+def convert_latitude(lat_string, hemisphere):
+    try:
+        if not lat_string or not hemisphere:
+            return float("NaN")
+
+        lat = float(lat_string)
+        lat_deg = int(lat / 100)
+        lat_min = lat - (lat_deg * 100)
+        lat_decimal = lat_deg + (lat_min / 60)
+
+        if hemisphere == "S":
+            lat_decimal = -lat_decimal
+
+        return lat_decimal
+    except ValueError:
+        return float("NaN")
+
+
+def convert_longitude(lon_string, hemisphere):
+    try:
+        if not lon_string or not hemisphere:
+            return float("NaN")
+
+        lon = float(lon_string)
+        lon_deg = int(lon / 100)
+        lon_min = lon - (lon_deg * 100)
+        lon_decimal = lon_deg + (lon_min / 60)
+
+        if hemisphere == "W":
+            lon_decimal = -lon_decimal
+
+        return lon_decimal
+    except ValueError:
+        return float("NaN")
+
+
+def convert_time(time_string):
+    try:
+        if not time_string:
+            return float("NaN")
+
+        hours = int(time_string[0:2])
+        minutes = int(time_string[2:4])
+        seconds = float(time_string[4:])
+
+        return hours * 3600 + minutes * 60 + seconds
+    except (ValueError, IndexError):
+        return float("NaN")
+
+
+def convert_status_flag(status_flag):
+    if status_flag == "A":
+        return True
+    else:
+        return False
+
+
+def convert_knots_to_mps(knots):
+    return knots * 0.514444
+
+
+def parse_GPGGA(nmea_sentence):
+    fields = nmea_sentence.split(",")
+
+    if len(fields) < 15:
+        return None
+
+    try:
+        time = convert_time(fields[1])
+        latitude = convert_latitude(fields[2], fields[3])
+        longitude = convert_longitude(fields[4], fields[5])
+
+        fix_quality = safe_int(fields[6])
+        num_satellites = safe_int(fields[7])
+        hdop = safe_float(fields[8])
+        altitude = safe_float(fields[9])
+
+        return {
+            "sentence_type": "GGA",
+            "utc_time": time,
+            "latitude": latitude,
+            "longitude": longitude,
+            "fix_quality": fix_quality,
+            "num_satellites": num_satellites,
+            "hdop": hdop,
+            "altitude": altitude,
+        }
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_GPRMC(nmea_sentence):
+    fields = nmea_sentence.split(",")
+
+    if len(fields) < 12:
+        return None
+
+    try:
+        time = convert_time(fields[1])
+        status = convert_status_flag(fields[2])
+        latitude = convert_latitude(fields[3], fields[4])
+        longitude = convert_longitude(fields[5], fields[6])
+
+        speed_knots = safe_float(fields[7])
+        speed_mps = convert_knots_to_mps(speed_knots)
+
+        track = safe_float(fields[8])
+        date_string = fields[9]
+
+        return {
+            "sentence_type": "RMC",
+            "utc_time": time,
+            "fix_valid": status,
+            "latitude": latitude,
+            "longitude": longitude,
+            "speed": speed_mps,
+            "track": track,
+            "date": date_string,
+        }
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_GPVTG(nmea_sentence):
+    fields = nmea_sentence.split(",")
+
+    if len(fields) < 9:
+        return None
+
+    try:
+        track_true = safe_float(fields[1])
+        track_magnetic = safe_float(fields[3])
+        speed_knots = safe_float(fields[5])
+        speed_kph = safe_float(fields[7])
+
+        speed_mps = convert_knots_to_mps(speed_knots)
+
+        return {"sentence_type": "VTG", "track": track_true, "speed": speed_mps}
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_PQTMIMU(sentence):
+    """
+    Parse $PQTMIMU message for IMU raw data at up to 100 Hz
+
+    Format: $PQTMIMU,<Timestamp>,<ACC_X>,<ACC_Y>,<ACC_Z>,<AngRate_X>,
+                     <AngRate_Y>,<AngRate_Z>,<TickCount>,<LastTick_Timestamp>*<Checksum>
+
+    Units: ACC in G, AngRate in deg/s
+
+    Example: $PQTMIMU,416170.00,0.012,-0.023,1.005,0.15,-0.08,0.02,1234,416170.00*3F
+    """
+    fields = sentence.split(",")
+
+    if len(fields) < 9:
+        return None
+
+    try:
+        last_field = fields[8].split("*")[0] if "*" in fields[8] else fields[8]
+
+        data = {
+            "sentence_type": "PQTMIMU",
+            "timestamp_ms": int(fields[1]) if fields[1] else None,
+            "acc_x_g": float(fields[2]) if fields[2] else 0.0,
+            "acc_y_g": float(fields[3]) if fields[3] else 0.0,
+            "acc_z_g": float(fields[4]) if fields[4] else 0.0,
+            "gyro_x_deg": float(fields[5]) if fields[5] else 0.0,
+            "gyro_y_deg": float(fields[6]) if fields[6] else 0.0,
+            "gyro_z_deg": float(fields[7]) if fields[7] else 0.0,
+            "tick_count": int(fields[8])
+            if fields[8] and fields[8].replace("-", "").isdigit()
+            else 0,
+            "tick_timestamp": float(last_field) if last_field else None,
+        }
+        return data
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_PQTMINS(sentence):
+    """
+    Parse $PQTMINS message for INS orientation data
+
+    Format: $PQTMINS,<Timestamp>,<Roll>,<Pitch>,<Heading>,<Lat>,<Lon>,
+                     <Alt>,<VE>,<VN>,<VU>,<Baseline>,<NSV1>,<NSV2>,<Status>,
+                     <Age>,<WarningFlag>,<RTK_Status>*<Checksum>
+
+    Units: Roll/Pitch/Heading in degrees, Lat/Lon in degrees, Alt in meters
+
+    Example: $PQTMINS,416170.00,1.25,-0.85,45.3,37.7749,-122.4194,50.2,0.5,1.2,0.1,0.15,12,10,1,0.2,0,4*5A
+
+    Note: Check your LC29H documentation for exact format as it may vary
+          by firmware version. Adjust field indices if needed.
+    """
+    fields = sentence.split(",")
+
+    if len(fields) < 15:  # Minimum fields needed
+        return None
+
+    try:
+        # Remove checksum from last field if present
+        last_field_idx = min(len(fields) - 1, 16)
+        fields[last_field_idx] = (
+            fields[last_field_idx].split("*")[0]
+            if "*" in fields[last_field_idx]
+            else fields[last_field_idx]
+        )
+
+        data = {
+            "sentence_type": "PQTMINS",
+            "timestamp_ms": int(fields[1]) if fields[1] else None,
+            "roll_deg": float(fields[2]) if fields[2] else 0.0,
+            "pitch_deg": float(fields[3]) if fields[3] else 0.0,
+            "heading_deg": float(fields[4]) if fields[4] else 0.0,
+            "latitude": float(fields[5]) if fields[5] else float("NaN"),
+            "longitude": float(fields[6]) if fields[6] else float("NaN"),
+            "altitude": float(fields[7]) if fields[7] else float("NaN"),
+            "vel_east": float(fields[8]) if len(fields) > 8 and fields[8] else 0.0,
+            "vel_north": float(fields[9]) if len(fields) > 9 and fields[9] else 0.0,
+            "vel_up": float(fields[10]) if len(fields) > 10 and fields[10] else 0.0,
+            "baseline": float(fields[11]) if len(fields) > 11 and fields[11] else 0.0,
+            "nsv1": int(fields[12]) if len(fields) > 12 and fields[12] else 0,
+            "nsv2": int(fields[13]) if len(fields) > 13 and fields[13] else 0,
+            "status": int(fields[14]) if len(fields) > 14 and fields[14] else 0,
+        }
+        return data
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_nmea_sentence(nmea_sentence):
+    """Parse an NMEA sentence and return a dictionary of the data."""
+    if not nmea_sentence or not nmea_sentence.startswith("$"):
+        return None
+
+    parts = nmea_sentence.split(",")
+    if len(parts) < 1:
+        return None
+
+    sentence_id = parts[0][1:]
+
+    if sentence_id.endswith("GGA"):
+        return parse_GPGGA(nmea_sentence)
+    elif sentence_id.endswith("RMC"):
+        return parse_GPRMC(nmea_sentence)
+    elif sentence_id.endswith("VTG"):
+        return parse_GPVTG(nmea_sentence)
+    elif sentence_id == "PQTMIMU":
+        return parse_PQTMIMU(nmea_sentence)
+    elif sentence_id == "PQTMINS":
+        return parse_PQTMINS(nmea_sentence)
+
+    return None
