@@ -1,0 +1,21 @@
+[0.651s] Invoking command in '/home/nithya/ros2_ws/build/nmea_navsat_driver': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/nithya/ros2_ws/build/nmea_navsat_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nithya/ros2_ws/install/nmea_navsat_driver/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nithya/ros2_ws/build/nmea_navsat_driver/build --no-deps symlink_data
+[0.908s] running develop
+[1.074s] running egg_info
+[1.091s] writing src/nmea_navsat_driver.egg-info/PKG-INFO
+[1.091s] writing dependency_links to src/nmea_navsat_driver.egg-info/dependency_links.txt
+[1.091s] writing entry points to src/nmea_navsat_driver.egg-info/entry_points.txt
+[1.091s] writing requirements to src/nmea_navsat_driver.egg-info/requires.txt
+[1.091s] writing top-level names to src/nmea_navsat_driver.egg-info/top_level.txt
+[1.125s] reading manifest file 'src/nmea_navsat_driver.egg-info/SOURCES.txt'
+[1.126s] writing manifest file 'src/nmea_navsat_driver.egg-info/SOURCES.txt'
+[1.143s] running build_ext
+[1.143s] Creating /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/python3.12/site-packages/nmea-navsat-driver.egg-link (link to src)
+[1.143s] Installing nmea_serial_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.144s] Installing nmea_socket_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.144s] Installing nmea_tcpclient_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.144s] Installing nmea_topic_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.144s] Installing nmea_topic_serial_reader script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.144s] 
+[1.144s] Installed /home/nithya/ros2_ws/build/nmea_navsat_driver/src
+[1.144s] running symlink_data
+[1.165s] Invoked command in '/home/nithya/ros2_ws/build/nmea_navsat_driver' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/nithya/ros2_ws/build/nmea_navsat_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nithya/ros2_ws/install/nmea_navsat_driver/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nithya/ros2_ws/build/nmea_navsat_driver/build --no-deps symlink_data

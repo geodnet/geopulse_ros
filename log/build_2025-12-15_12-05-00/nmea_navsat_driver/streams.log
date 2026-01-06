@@ -1,0 +1,36 @@
+[0.666s] Invoking command in '/home/nithya/ros2_ws/build/nmea_navsat_driver': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/nithya/ros2_ws/build/nmea_navsat_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nithya/ros2_ws/install/nmea_navsat_driver/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nithya/ros2_ws/build/nmea_navsat_driver/build --no-deps symlink_data
+[0.922s] running develop
+[1.100s] running egg_info
+[1.100s] creating src/nmea_navsat_driver.egg-info
+[1.120s] writing src/nmea_navsat_driver.egg-info/PKG-INFO
+[1.120s] writing dependency_links to src/nmea_navsat_driver.egg-info/dependency_links.txt
+[1.120s] writing entry points to src/nmea_navsat_driver.egg-info/entry_points.txt
+[1.120s] writing requirements to src/nmea_navsat_driver.egg-info/requires.txt
+[1.120s] writing top-level names to src/nmea_navsat_driver.egg-info/top_level.txt
+[1.121s] writing manifest file 'src/nmea_navsat_driver.egg-info/SOURCES.txt'
+[1.170s] reading manifest file 'src/nmea_navsat_driver.egg-info/SOURCES.txt'
+[1.171s] writing manifest file 'src/nmea_navsat_driver.egg-info/SOURCES.txt'
+[1.195s] running build_ext
+[1.195s] Creating /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/python3.12/site-packages/nmea-navsat-driver.egg-link (link to src)
+[1.196s] Installing nmea_serial_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.196s] Installing nmea_socket_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.196s] Installing nmea_tcpclient_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.196s] Installing nmea_topic_driver script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.196s] Installing nmea_topic_serial_reader script to /home/nithya/ros2_ws/install/nmea_navsat_driver/lib/nmea_navsat_driver
+[1.196s] 
+[1.196s] Installed /home/nithya/ros2_ws/build/nmea_navsat_driver/src
+[1.196s] running symlink_data
+[1.197s] creating /home/nithya/ros2_ws/install/nmea_navsat_driver/share/ament_index
+[1.197s] creating /home/nithya/ros2_ws/install/nmea_navsat_driver/share/ament_index/resource_index
+[1.197s] creating /home/nithya/ros2_ws/install/nmea_navsat_driver/share/ament_index/resource_index/packages
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/resource/nmea_navsat_driver -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/ament_index/resource_index/packages
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/package.xml -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver
+[1.197s] creating /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/launch
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/launch/nmea_serial_driver.launch.py -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/launch
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/launch/nmea_socket_driver.launch.py -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/launch
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/launch/nmea_tcpclient_driver.launch.py -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/launch
+[1.197s] creating /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/config
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/config/nmea_socket_driver.yaml -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/config
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/config/nmea_tcpclient_driver.yaml -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/config
+[1.197s] symbolically linking /home/nithya/ros2_ws/build/nmea_navsat_driver/config/nmea_serial_driver.yaml -> /home/nithya/ros2_ws/install/nmea_navsat_driver/share/nmea_navsat_driver/config
+[1.229s] Invoked command in '/home/nithya/ros2_ws/build/nmea_navsat_driver' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/nithya/ros2_ws/build/nmea_navsat_driver/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nithya/ros2_ws/install/nmea_navsat_driver/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nithya/ros2_ws/build/nmea_navsat_driver/build --no-deps symlink_data
