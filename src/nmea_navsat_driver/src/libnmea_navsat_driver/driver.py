@@ -2,33 +2,6 @@
 #
 # Copyright (c) 2013, Eric Perko
 # All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#
-#  * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#  * Redistributions in binary form must reproduce the above
-#    copyright notice, this list of conditions and the following
-#    disclaimer in the documentation and/or other materials provided
-#    with the distribution.
-#  * Neither the names of the authors nor the names of their
-#    affiliated organizations may be used to endorse or promote products derived
-#    from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-# COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-# ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
 
 import math
 
@@ -39,20 +12,10 @@ from nav_msgs.msg import Odometry
 from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
 import libnmea_navsat_driver.parser
 
-ros
-
 
 def euler_to_quaternion(roll, pitch, yaw):
     """
     Convert Euler angles (roll, pitch, yaw) in radians to quaternion.
-
-    Args:
-        roll: Rotation around x-axis (radians)
-        pitch: Rotation around y-axis (radians)
-        yaw: Rotation around z-axis (radians)
-
-    Returns:
-        tuple: (x, y, z, w) quaternion components
     """
     cy = math.cos(yaw * 0.5)
     sy = math.sin(yaw * 0.5)
@@ -72,74 +35,52 @@ def euler_to_quaternion(roll, pitch, yaw):
 class Ros2NMEADriver(object):
     """
     ROS2 driver for NMEA GNSS devices with IMU support.
-
-    This is a non-Node class that just handles NMEA parsing and message creation.
-    It's meant to be used by a Node (like nmea_serial_driver).
-
-    Supports standard NMEA messages (GGA, RMC, VTG) and
-    LC29H proprietary messages for IMU data (PQTMIMU, PQTMINS).
-
-    Publishes on standard ROS2 topics:
-    - /fix - GPS position (NavSatFix)
-    - /vel - Velocity (TwistStamped)
-    - /imu/data - Full IMU with orientation (Imu)
-    - /imu/data_raw - Raw IMU without orientation (Imu)
-    - /time_reference - GPS time reference (TimeReference)
-    - /odometry/ins - INS odometry with position, orientation, velocity (Odometry)
     """
 
-    # Unit conversion constants
-    G_TO_MS2 = 9.80665  # Standard gravity: 1 G = 9.80665 m/s²
-    DEG_TO_RAD = math.pi / 180.0  # Convert degrees to radians
+    G_TO_MS2 = 9.80665
+    DEG_TO_RAD = math.pi / 180.0
 
-    def __init__(self, frame_id="gps", time_ref_source=None, use_RMC=False):
-        """
-        Initialize the driver.
-
-        Args:
-            frame_id: Frame ID for published messages
-            time_ref_source: Source string for time reference messages
-            use_RMC: Whether to use RMC messages for position
-        """
+    def __init__(self, frame_id="gps", time_ref_source=None, use_RMC=True):
         self.frame_id = frame_id
         self.time_ref_source = time_ref_source if time_ref_source != "" else None
         self.use_RMC = use_RMC
 
-        # Publishers will be set by the node
-        # Standard ROS2 topic names:
-        self.fix_pub = None  # /fix
-        self.vel_pub = None  # /vel
-        self.time_ref_pub = None  # /time_reference
-        self.imu_data_pub = None  # /imu/data (with orientation)
-        self.imu_data_raw_pub = None  # /imu/data_raw (no orientation)
-        self.odometry_pub = None  # /odometry/ins (INS odometry)
+        self.fix_pub = None
+        self.vel_pub = None
+        self.time_ref_pub = None
+        self.imu_data_pub = None
+        self.imu_data_raw_pub = None
+        self.odometry_pub = None
 
-        # Track current fix data
         self.current_fix = NavSatFix()
         self.current_fix.header.frame_id = self.frame_id
         self.current_fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
 
-        # Track current IMU data (acceleration and gyro from PQTMIMU)
         self.current_linear_accel = Vector3()
         self.current_angular_vel = Vector3()
         self.has_imu_raw_data = False
 
-        # Track whether we've received valid data
+        self.current_orientation = Quaternion()
+        self.current_orientation.w = 1.0
+        self.has_orientation_data = False
+
         self.valid_fix = False
 
     def get_frame_id(self):
-        """Get the frame ID for published messages."""
         return self.frame_id
 
     def add_sentence(self, nmea_string, frame_id, timestamp=None):
         """
         Parse an NMEA sentence and publish ROS2 messages.
-
-        This method is called for each line received from the GNSS device.
-        It handles standard NMEA messages and LC29H proprietary messages.
-
-        Returns True if the sentence was successfully parsed and published.
         """
+        if not nmea_string or not nmea_string.startswith("$"):
+            return False
+            
+        try:
+            nmea_string.encode("ascii")
+        except UnicodeEncodeError:
+            return False
+        
         if not check_nmea_checksum(nmea_string):
             return False
 
@@ -147,31 +88,25 @@ class Ros2NMEADriver(object):
         if not parsed_sentence:
             return False
 
-        # Update frame_id if provided
         if frame_id:
             self.current_fix.header.frame_id = frame_id
 
-        # Handle different sentence types
         sentence_type = parsed_sentence["sentence_type"]
 
         if sentence_type == "GGA":
             self.handle_gga(parsed_sentence, timestamp)
             return True
-
         elif sentence_type == "RMC":
             self.handle_rmc(parsed_sentence, timestamp)
             return True
-
         elif sentence_type == "VTG":
             self.handle_vtg(parsed_sentence, timestamp)
             return True
-
-        elif sentence_type == "PQTMIMU":
-            self.handle_pqtmimu(parsed_sentence, timestamp)
+        elif sentence_type == "PQTMSENMSG":
+            self.handle_pqtmsenmsg(parsed_sentence, timestamp)
             return True
-
-        elif sentence_type == "PQTMINS":
-            self.handle_pqtmins(parsed_sentence, timestamp)
+        elif sentence_type == "PQTMDRPVA":
+            self.handle_pqtmdrpva(parsed_sentence, timestamp)
             return True
 
         return False
@@ -180,7 +115,6 @@ class Ros2NMEADriver(object):
         """Handle GGA message - GPS Fix Data"""
         self.current_fix.header.stamp = timestamp
 
-        # Set position
         if not math.isnan(parsed_sentence["latitude"]):
             self.current_fix.latitude = parsed_sentence["latitude"]
         if not math.isnan(parsed_sentence["longitude"]):
@@ -188,7 +122,6 @@ class Ros2NMEADriver(object):
         if not math.isnan(parsed_sentence["altitude"]):
             self.current_fix.altitude = parsed_sentence["altitude"]
 
-        # Set fix status
         fix_quality = parsed_sentence["fix_quality"]
         if fix_quality == 0:
             self.current_fix.status.status = NavSatStatus.STATUS_NO_FIX
@@ -201,44 +134,29 @@ class Ros2NMEADriver(object):
         else:
             self.current_fix.status.status = NavSatStatus.STATUS_FIX
 
-        # Set service type (assume GPS)
         self.current_fix.status.service = NavSatStatus.SERVICE_GPS
 
-        # Set covariance from HDOP
         hdop = parsed_sentence["hdop"]
         if not math.isnan(hdop):
-            # Rough approximation: position error ~= HDOP * 5 meters
             variance = math.pow(hdop * 5.0, 2)
             self.current_fix.position_covariance = [
-                variance,
-                0.0,
-                0.0,
-                0.0,
-                variance,
-                0.0,
-                0.0,
-                0.0,
-                variance * 2,  # Vertical less accurate
+                variance, 0.0, 0.0,
+                0.0, variance, 0.0,
+                0.0, 0.0, variance * 2,
             ]
-            self.current_fix.position_covariance_type = (
-                NavSatFix.COVARIANCE_TYPE_APPROXIMATED
-            )
+            self.current_fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
 
-        # Publish on /fix topic
         if self.fix_pub:
             self.fix_pub.publish(self.current_fix)
 
-        # Publish time reference on /time_reference topic
         if self.time_ref_source and self.time_ref_pub:
             time_ref = TimeReference()
             time_ref.header.stamp = timestamp
             time_ref.header.frame_id = self.frame_id
 
-            # Convert UTC time to ROS time
             utc_time = parsed_sentence["utc_time"]
             if not math.isnan(utc_time):
                 from builtin_interfaces.msg import Time as TimeMsg
-
                 time_ref.time_ref = TimeMsg()
                 time_ref.time_ref.sec = int(utc_time)
                 time_ref.time_ref.nanosec = int((utc_time % 1) * 1e9)
@@ -246,13 +164,12 @@ class Ros2NMEADriver(object):
                 self.time_ref_pub.publish(time_ref)
 
     def handle_rmc(self, parsed_sentence, timestamp):
-        """Handle RMC message - Recommended Minimum"""
+        """Handle RMC message"""
         if not self.use_RMC:
             return
 
         self.current_fix.header.stamp = timestamp
 
-        # Set position
         if parsed_sentence["fix_valid"]:
             if not math.isnan(parsed_sentence["latitude"]):
                 self.current_fix.latitude = parsed_sentence["latitude"]
@@ -264,39 +181,26 @@ class Ros2NMEADriver(object):
         else:
             self.current_fix.status.status = NavSatStatus.STATUS_NO_FIX
 
-        # Publish on /fix topic
         if self.fix_pub:
             self.fix_pub.publish(self.current_fix)
 
     def handle_vtg(self, parsed_sentence, timestamp):
-        """Handle VTG message - Track and Speed"""
+        """Handle VTG message"""
         twist = TwistStamped()
         twist.header.stamp = timestamp
         twist.header.frame_id = self.frame_id
 
-        # Linear velocity (speed)
         if not math.isnan(parsed_sentence["speed"]):
             twist.twist.linear.x = parsed_sentence["speed"]
 
-        # Note: VTG provides track (direction of travel) but not angular velocity
-        # So we only set linear velocity
-
-        # Publish on /vel topic
         if self.vel_pub:
             self.vel_pub.publish(twist)
 
-    def handle_pqtmimu(self, parsed_sentence, timestamp):
-        """
-        Handle PQTMIMU message - LC29H IMU Raw Data (high rate, up to 100Hz)
-
-        Publishes to /imu/data_raw (raw IMU without orientation).
-        Stores acceleration and gyro data to be combined with orientation
-        from PQTMINS messages for /imu/data topic.
-        """
+    def handle_pqtmsenmsg(self, parsed_sentence, timestamp):
+        """Handle PQTMSENMSG message - IMU Raw Data"""
         if parsed_sentence is None:
             return
 
-        # Store raw IMU data for combination with PQTMINS orientation
         self.current_linear_accel.x = parsed_sentence["acc_x_g"] * self.G_TO_MS2
         self.current_linear_accel.y = parsed_sentence["acc_y_g"] * self.G_TO_MS2
         self.current_linear_accel.z = parsed_sentence["acc_z_g"] * self.G_TO_MS2
@@ -307,277 +211,148 @@ class Ros2NMEADriver(object):
 
         self.has_imu_raw_data = True
 
-        # Publish raw IMU data on /imu/data_raw (without orientation)
         if self.imu_data_raw_pub:
             msg = Imu()
             msg.header.stamp = timestamp
             msg.header.frame_id = self.frame_id
 
-            # Linear acceleration
             msg.linear_acceleration = self.current_linear_accel
             msg.linear_acceleration_covariance = [
-                0.01,
-                0.0,
-                0.0,
-                0.0,
-                0.01,
-                0.0,
-                0.0,
-                0.0,
-                0.01,
+                0.01, 0.0, 0.0,
+                0.0, 0.01, 0.0,
+                0.0, 0.0, 0.01,
             ]
 
-            # Angular velocity
             msg.angular_velocity = self.current_angular_vel
             msg.angular_velocity_covariance = [
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
+                0.000003, 0.0, 0.0,
+                0.0, 0.000003, 0.0,
+                0.0, 0.0, 0.000003,
             ]
 
-            # Identity quaternion - orientation NOT available in raw data
             msg.orientation.x = 0.0
             msg.orientation.y = 0.0
             msg.orientation.z = 0.0
             msg.orientation.w = 1.0
 
-            # Orientation covariance: -1 in [0] indicates unknown/unavailable
             msg.orientation_covariance = [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
             self.imu_data_raw_pub.publish(msg)
 
-    def handle_pqtmins(self, parsed_sentence, timestamp):
-        """
-        Handle PQTMINS message - LC29H INS Orientation Data
+        if self.has_orientation_data and self.imu_data_pub:
+            self.publish_full_imu(timestamp)
 
-        Publishes:
-        1. Full 9-DOF IMU data to /imu/data with orientation (roll, pitch, yaw)
-        2. INS odometry to /odometry/ins with position, orientation, and velocity
-
-        Combines with acceleration/gyro from PQTMIMU if available.
-
-        Note: PQTMINS typically publishes at lower rate (e.g. 10Hz) than
-        PQTMIMU (up to 100Hz). For high-rate raw data, use /imu/data_raw.
-        """
+    def handle_pqtmdrpva(self, parsed_sentence, timestamp):
+        """Handle PQTMDRPVA message - INS Data"""
         if parsed_sentence is None:
             return
 
-        # Orientation from PQTMINS - Convert Euler to Quaternion
         roll_rad = parsed_sentence["roll_deg"] * self.DEG_TO_RAD
         pitch_rad = parsed_sentence["pitch_deg"] * self.DEG_TO_RAD
         yaw_rad = parsed_sentence["heading_deg"] * self.DEG_TO_RAD
 
         qx, qy, qz, qw = euler_to_quaternion(roll_rad, pitch_rad, yaw_rad)
 
-        # Publish IMU message if publisher exists
-        if self.imu_data_pub is not None:
-            msg = Imu()
+        self.current_orientation.x = qx
+        self.current_orientation.y = qy
+        self.current_orientation.z = qz
+        self.current_orientation.w = qw
+        self.has_orientation_data = True
 
-            # Header
-            msg.header.stamp = timestamp
-            msg.header.frame_id = self.frame_id
+        if self.vel_pub:
+            twist = TwistStamped()
+            twist.header.stamp = timestamp
+            twist.header.frame_id = self.frame_id
+            twist.twist.linear.x = parsed_sentence["speed"]
+            self.vel_pub.publish(twist)
 
-            msg.orientation.x = qx
-            msg.orientation.y = qy
-            msg.orientation.z = qz
-            msg.orientation.w = qw
+        if self.has_imu_raw_data and self.imu_data_pub:
+            self.publish_full_imu(timestamp)
 
-            # Orientation covariance
-            # Roll/Pitch: ~0.5° = 0.0087 rad, Yaw: ~1° = 0.017 rad (typical consumer IMU)
-            msg.orientation_covariance = [
-                0.0087**2,
-                0.0,
-                0.0,
-                0.0,
-                0.0087**2,
-                0.0,
-                0.0,
-                0.0,
-                0.017**2,
-            ]
-
-            # Use stored acceleration/gyro from PQTMIMU if available
-            # Otherwise set to zero (PQTMINS doesn't include raw accel/gyro)
-            if self.has_imu_raw_data:
-                msg.linear_acceleration = self.current_linear_accel
-                msg.angular_velocity = self.current_angular_vel
-            else:
-                msg.linear_acceleration.x = 0.0
-                msg.linear_acceleration.y = 0.0
-                msg.linear_acceleration.z = 0.0
-                msg.angular_velocity.x = 0.0
-                msg.angular_velocity.y = 0.0
-                msg.angular_velocity.z = 0.0
-
-            msg.linear_acceleration_covariance = [
-                0.01,
-                0.0,
-                0.0,
-                0.0,
-                0.01,
-                0.0,
-                0.0,
-                0.0,
-                0.01,
-            ]
-
-            msg.angular_velocity_covariance = [
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-            ]
-
-            # Publish full 9-DOF IMU data on /imu/data
-            self.imu_data_pub.publish(msg)
-
-        # Publish INS Odometry message if publisher exists
-        if self.odometry_pub is not None:
+        if self.odometry_pub:
             odom = Odometry()
-
-            # Header
             odom.header.stamp = timestamp
-            odom.header.frame_id = "map"  # or 'odom' depending on your setup
+            odom.header.frame_id = "map"
             odom.child_frame_id = self.frame_id
 
-            # Position from PQTMINS (lat/lon/alt converted to local frame)
-            # Note: For proper usage, you should convert lat/lon to local x/y
-            # For now, we'll use a simple approximation or leave as GPS coordinates
-            # You may want to use a proper coordinate transformation library
-            if not math.isnan(parsed_sentence["latitude"]) and not math.isnan(
-                parsed_sentence["longitude"]
-            ):
-                # Store as geodetic coordinates (you may want to convert to local frame)
-                # For simplicity, we're using lat/lon directly (not ideal for navigation)
-                # Consider using robot_localization or navsat_transform for proper conversion
+            if not math.isnan(parsed_sentence["latitude"]) and not math.isnan(parsed_sentence["longitude"]):
                 odom.pose.pose.position.x = parsed_sentence["latitude"]
                 odom.pose.pose.position.y = parsed_sentence["longitude"]
-                odom.pose.pose.position.z = (
-                    parsed_sentence["altitude"]
-                    if not math.isnan(parsed_sentence["altitude"])
-                    else 0.0
-                )
+                odom.pose.pose.position.z = parsed_sentence["altitude"] if not math.isnan(parsed_sentence["altitude"]) else 0.0
 
-            # Orientation (already computed)
-            odom.pose.pose.orientation.x = qx
-            odom.pose.pose.orientation.y = qy
-            odom.pose.pose.orientation.z = qz
-            odom.pose.pose.orientation.w = qw
+            odom.pose.pose.orientation = self.current_orientation
 
-            # Position covariance (from GPS accuracy - rough estimate)
-            # Diagonal: x, y, z, roll, pitch, yaw
+            sol_type = parsed_sentence["solution_type"]
+            if sol_type == 4:
+                pos_variance = 0.04
+            elif sol_type == 5:
+                pos_variance = 1.0
+            elif sol_type == 2:
+                pos_variance = 4.0
+            elif sol_type == 1:
+                pos_variance = 25.0
+            else:
+                pos_variance = 10000.0
+
             odom.pose.covariance = [
-                25.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,  # x variance (5m std dev)
-                0.0,
-                25.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,  # y variance
-                0.0,
-                0.0,
-                100.0,
-                0.0,
-                0.0,
-                0.0,  # z variance (10m std dev - worse)
-                0.0,
-                0.0,
-                0.0,
-                0.0087**2,
-                0.0,
-                0.0,  # roll variance
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0087**2,
-                0.0,  # pitch variance
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.017**2,  # yaw variance
+                pos_variance, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, pos_variance, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, pos_variance * 4, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0087**2, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0087**2, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.017**2,
             ]
 
-            # Velocity from PQTMINS (East, North, Up)
-            # Convert to body frame velocity
-            vel_east = parsed_sentence["vel_east"]
-            vel_north = parsed_sentence["vel_north"]
-            vel_up = parsed_sentence["vel_up"]
+            odom.twist.twist.linear.x = parsed_sentence["vel_north"]
+            odom.twist.twist.linear.y = parsed_sentence["vel_east"]
+            odom.twist.twist.linear.z = -parsed_sentence["vel_down"]
 
-            # For now, use ENU velocities directly
-            # Ideally, transform to body frame using orientation
-            odom.twist.twist.linear.x = vel_north  # Forward velocity (North in ENU)
-            odom.twist.twist.linear.y = vel_east  # Lateral velocity (East in ENU)
-            odom.twist.twist.linear.z = vel_up  # Vertical velocity
-
-            # Angular velocity from stored IMU data
             if self.has_imu_raw_data:
-                odom.twist.twist.angular.x = self.current_angular_vel.x
-                odom.twist.twist.angular.y = self.current_angular_vel.y
-                odom.twist.twist.angular.z = self.current_angular_vel.z
+                odom.twist.twist.angular = self.current_angular_vel
             else:
                 odom.twist.twist.angular.x = 0.0
                 odom.twist.twist.angular.y = 0.0
                 odom.twist.twist.angular.z = 0.0
 
-            # Velocity covariance
-            # Diagonal: vx, vy, vz, roll_rate, pitch_rate, yaw_rate
             odom.twist.covariance = [
-                0.1,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,  # vx variance (0.3 m/s std dev)
-                0.0,
-                0.1,
-                0.0,
-                0.0,
-                0.0,
-                0.0,  # vy variance
-                0.0,
-                0.0,
-                0.1,
-                0.0,
-                0.0,
-                0.0,  # vz variance
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-                0.0,
-                0.0,  # roll_rate variance
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-                0.0,  # pitch_rate variance
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,  # yaw_rate variance
+                0.1, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.1, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.000003, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.000003, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.000003,
             ]
 
-            # Publish INS odometry
             self.odometry_pub.publish(odom)
+
+    def publish_full_imu(self, timestamp):
+        """Publish full 9-DOF IMU message"""
+        if not self.imu_data_pub:
+            return
+
+        msg = Imu()
+        msg.header.stamp = timestamp
+        msg.header.frame_id = self.frame_id
+
+        msg.orientation = self.current_orientation
+        msg.orientation_covariance = [
+            0.0087**2, 0.0, 0.0,
+            0.0, 0.0087**2, 0.0,
+            0.0, 0.0, 0.017**2,
+        ]
+
+        msg.linear_acceleration = self.current_linear_accel
+        msg.linear_acceleration_covariance = [
+            0.01, 0.0, 0.0,
+            0.0, 0.01, 0.0,
+            0.0, 0.0, 0.01,
+        ]
+
+        msg.angular_velocity = self.current_angular_vel
+        msg.angular_velocity_covariance = [
+            0.000003, 0.0, 0.0,
+            0.0, 0.000003, 0.0,
+            0.0, 0.0, 0.000003,
+        ]
+
+        self.imu_data_pub.publish(msg)
