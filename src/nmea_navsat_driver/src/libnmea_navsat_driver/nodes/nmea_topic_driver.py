@@ -60,9 +60,7 @@ def main(args=None):
     driver = Ros2NMEADriver()
     driver.get_frame_id()
 
-    driver.create_subscription(
-        Sentence, "nmea_sentence", partial(nmea_sentence_callback, driver=driver), 10
-    )
+    driver.create_subscription(Sentence, "nmea_sentence", partial(nmea_sentence_callback, driver=driver), 10)
 
     rclpy.spin(driver)
 

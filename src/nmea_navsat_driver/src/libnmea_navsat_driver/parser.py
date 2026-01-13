@@ -166,13 +166,13 @@ def parse_GPVTG(nmea_sentence):
 def parse_PQTMSENMSG(sentence):
     """Parse PQTMSENMSG message for IMU raw data"""
     fields = sentence.split(",")
-    
+
     if len(fields) < 10:
         return None
-    
+
     try:
         last_field = fields[9].split("*")[0] if "*" in fields[9] else fields[9]
-        
+
         data = {
             "sentence_type": "PQTMSENMSG",
             "msg_type": safe_int(fields[1]),
@@ -193,13 +193,13 @@ def parse_PQTMSENMSG(sentence):
 def parse_PQTMDRPVA(sentence):
     """Parse PQTMDRPVA message for INS position, velocity, and attitude"""
     fields = sentence.split(",")
-    
+
     if len(fields) < 16:
         return None
-    
+
     try:
         last_field = fields[15].split("*")[0] if "*" in fields[15] else fields[15]
-        
+
         data = {
             "sentence_type": "PQTMDRPVA",
             "msg_version": safe_int(fields[1]),
