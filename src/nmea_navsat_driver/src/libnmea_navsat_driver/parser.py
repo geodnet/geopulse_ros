@@ -163,89 +163,60 @@ def parse_GPVTG(nmea_sentence):
         return None
 
 
-def parse_PQTMIMU(sentence):
-    """
-    Parse $PQTMIMU message for IMU raw data at up to 100 Hz
-
-    Format: $PQTMIMU,<Timestamp>,<ACC_X>,<ACC_Y>,<ACC_Z>,<AngRate_X>,
-                     <AngRate_Y>,<AngRate_Z>,<TickCount>,<LastTick_Timestamp>*<Checksum>
-
-    Units: ACC in G, AngRate in deg/s
-
-    Example: $PQTMIMU,416170.00,0.012,-0.023,1.005,0.15,-0.08,0.02,1234,416170.00*3F
-    """
+def parse_PQTMSENMSG(sentence):
+    """Parse PQTMSENMSG message for IMU raw data"""
     fields = sentence.split(",")
-
-    if len(fields) < 9:
+    
+    if len(fields) < 10:
         return None
-
+    
     try:
-        last_field = fields[8].split("*")[0] if "*" in fields[8] else fields[8]
-
+        last_field = fields[9].split("*")[0] if "*" in fields[9] else fields[9]
+        
         data = {
-            "sentence_type": "PQTMIMU",
-            "timestamp_ms": int(fields[1]) if fields[1] else None,
-            "acc_x_g": float(fields[2]) if fields[2] else 0.0,
-            "acc_y_g": float(fields[3]) if fields[3] else 0.0,
-            "acc_z_g": float(fields[4]) if fields[4] else 0.0,
-            "gyro_x_deg": float(fields[5]) if fields[5] else 0.0,
-            "gyro_y_deg": float(fields[6]) if fields[6] else 0.0,
-            "gyro_z_deg": float(fields[7]) if fields[7] else 0.0,
-            "tick_count": int(fields[8])
-            if fields[8] and fields[8].replace("-", "").isdigit()
-            else 0,
-            "tick_timestamp": float(last_field) if last_field else None,
+            "sentence_type": "PQTMSENMSG",
+            "msg_type": safe_int(fields[1]),
+            "timestamp_ms": safe_int(fields[2]),
+            "imu_temp_c": safe_float(fields[3]),
+            "gyro_x_deg": safe_float(fields[4]),
+            "gyro_y_deg": safe_float(fields[5]),
+            "gyro_z_deg": safe_float(fields[6]),
+            "acc_x_g": safe_float(fields[7]),
+            "acc_y_g": safe_float(fields[8]),
+            "acc_z_g": safe_float(last_field),
         }
         return data
     except (ValueError, IndexError):
         return None
 
 
-def parse_PQTMINS(sentence):
-    """
-    Parse $PQTMINS message for INS orientation data
-
-    Format: $PQTMINS,<Timestamp>,<Roll>,<Pitch>,<Heading>,<Lat>,<Lon>,
-                     <Alt>,<VE>,<VN>,<VU>,<Baseline>,<NSV1>,<NSV2>,<Status>,
-                     <Age>,<WarningFlag>,<RTK_Status>*<Checksum>
-
-    Units: Roll/Pitch/Heading in degrees, Lat/Lon in degrees, Alt in meters
-
-    Example: $PQTMINS,416170.00,1.25,-0.85,45.3,37.7749,-122.4194,50.2,0.5,1.2,0.1,0.15,12,10,1,0.2,0,4*5A
-
-    Note: Check your LC29H documentation for exact format as it may vary
-          by firmware version. Adjust field indices if needed.
-    """
+def parse_PQTMDRPVA(sentence):
+    """Parse PQTMDRPVA message for INS position, velocity, and attitude"""
     fields = sentence.split(",")
-
-    if len(fields) < 15:  # Minimum fields needed
+    
+    if len(fields) < 16:
         return None
-
+    
     try:
-        # Remove checksum from last field if present
-        last_field_idx = min(len(fields) - 1, 16)
-        fields[last_field_idx] = (
-            fields[last_field_idx].split("*")[0]
-            if "*" in fields[last_field_idx]
-            else fields[last_field_idx]
-        )
-
+        last_field = fields[15].split("*")[0] if "*" in fields[15] else fields[15]
+        
         data = {
-            "sentence_type": "PQTMINS",
-            "timestamp_ms": int(fields[1]) if fields[1] else None,
-            "roll_deg": float(fields[2]) if fields[2] else 0.0,
-            "pitch_deg": float(fields[3]) if fields[3] else 0.0,
-            "heading_deg": float(fields[4]) if fields[4] else 0.0,
-            "latitude": float(fields[5]) if fields[5] else float("NaN"),
-            "longitude": float(fields[6]) if fields[6] else float("NaN"),
-            "altitude": float(fields[7]) if fields[7] else float("NaN"),
-            "vel_east": float(fields[8]) if len(fields) > 8 and fields[8] else 0.0,
-            "vel_north": float(fields[9]) if len(fields) > 9 and fields[9] else 0.0,
-            "vel_up": float(fields[10]) if len(fields) > 10 and fields[10] else 0.0,
-            "baseline": float(fields[11]) if len(fields) > 11 and fields[11] else 0.0,
-            "nsv1": int(fields[12]) if len(fields) > 12 and fields[12] else 0,
-            "nsv2": int(fields[13]) if len(fields) > 13 and fields[13] else 0,
-            "status": int(fields[14]) if len(fields) > 14 and fields[14] else 0,
+            "sentence_type": "PQTMDRPVA",
+            "msg_version": safe_int(fields[1]),
+            "timestamp_ms": safe_int(fields[2]),
+            "utc_time": convert_time(fields[3]),
+            "solution_type": safe_int(fields[4]),
+            "latitude": safe_float(fields[5]),
+            "longitude": safe_float(fields[6]),
+            "altitude": safe_float(fields[7]),
+            "separation": safe_float(fields[8]),
+            "vel_north": safe_float(fields[9]),
+            "vel_east": safe_float(fields[10]),
+            "vel_down": safe_float(fields[11]),
+            "speed": safe_float(fields[12]),
+            "roll_deg": safe_float(fields[13]),
+            "pitch_deg": safe_float(fields[14]),
+            "heading_deg": safe_float(last_field),
         }
         return data
     except (ValueError, IndexError):
@@ -269,9 +240,9 @@ def parse_nmea_sentence(nmea_sentence):
         return parse_GPRMC(nmea_sentence)
     elif sentence_id.endswith("VTG"):
         return parse_GPVTG(nmea_sentence)
-    elif sentence_id == "PQTMIMU":
-        return parse_PQTMIMU(nmea_sentence)
-    elif sentence_id == "PQTMINS":
-        return parse_PQTMINS(nmea_sentence)
+    elif sentence_id == "PQTMSENMSG":
+        return parse_PQTMSENMSG(nmea_sentence)
+    elif sentence_id == "PQTMDRPVA":
+        return parse_PQTMDRPVA(nmea_sentence)
 
     return None

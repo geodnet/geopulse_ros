@@ -26,7 +26,7 @@ class NMEASerialNode(Node):
         super().__init__("nmea_serial_driver")
 
         # Declare parameters
-        self.declare_parameter("port", "/dev/ttyUSB1")
+        self.declare_parameter("port", "/dev/ttyUSB0")
         self.declare_parameter("baud", 115200)
         self.declare_parameter("frame_id", "gps")
         self.declare_parameter("time_ref_source", "")
@@ -56,7 +56,7 @@ class NMEASerialNode(Node):
 
         # Open serial port
         try:
-            self.serial_port = serial.Serial(port=port, baudrate=baud, timeout=2)
+            self.serial_port = serial.Serial(port=port, baudrate=baud, timeout=0.1)
             self.get_logger().info(f"Opened serial port {port} at {baud} baud")
         except serial.SerialException as e:
             self.get_logger().error(f"Could not open serial port {port}: {e}")
@@ -71,7 +71,8 @@ class NMEASerialNode(Node):
     def read_serial(self):
         """Read data from serial port and process NMEA sentences."""
         try:
-            if self.serial_port.in_waiting:
+            # Process all available lines in the buffer
+            while self.serial_port.in_waiting > 0:
                 # Read a line
                 data = self.serial_port.readline()
 
@@ -79,19 +80,21 @@ class NMEASerialNode(Node):
                 try:
                     sentence = data.decode("ascii", errors="ignore").strip()
                 except UnicodeDecodeError:
-                    return
+                    continue
 
                 if not sentence:
-                    return
+                    continue
 
                 # Get current timestamp
                 timestamp = self.get_clock().now().to_msg()
 
                 # Process sentence
                 try:
-                    self.driver.add_sentence(
+                    processed = self.driver.add_sentence(
                         sentence, self.driver.get_frame_id(), timestamp
                     )
+                    if processed:
+                        self.get_logger().debug(f"Processed: {sentence[:50]}")
                 except ValueError as e:
                     self.get_logger().warn(f"Error parsing sentence: {e}")
                 except Exception as e:
