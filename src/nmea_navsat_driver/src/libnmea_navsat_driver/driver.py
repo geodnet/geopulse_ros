@@ -75,12 +75,12 @@ class Ros2NMEADriver(object):
         """
         if not nmea_string or not nmea_string.startswith("$"):
             return False
-            
+
         try:
             nmea_string.encode("ascii")
         except UnicodeEncodeError:
             return False
-        
+
         if not check_nmea_checksum(nmea_string):
             return False
 
@@ -140,9 +140,15 @@ class Ros2NMEADriver(object):
         if not math.isnan(hdop):
             variance = math.pow(hdop * 5.0, 2)
             self.current_fix.position_covariance = [
-                variance, 0.0, 0.0,
-                0.0, variance, 0.0,
-                0.0, 0.0, variance * 2,
+                variance,
+                0.0,
+                0.0,
+                0.0,
+                variance,
+                0.0,
+                0.0,
+                0.0,
+                variance * 2,
             ]
             self.current_fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
 
@@ -157,6 +163,7 @@ class Ros2NMEADriver(object):
             utc_time = parsed_sentence["utc_time"]
             if not math.isnan(utc_time):
                 from builtin_interfaces.msg import Time as TimeMsg
+
                 time_ref.time_ref = TimeMsg()
                 time_ref.time_ref.sec = int(utc_time)
                 time_ref.time_ref.nanosec = int((utc_time % 1) * 1e9)
@@ -218,16 +225,28 @@ class Ros2NMEADriver(object):
 
             msg.linear_acceleration = self.current_linear_accel
             msg.linear_acceleration_covariance = [
-                0.01, 0.0, 0.0,
-                0.0, 0.01, 0.0,
-                0.0, 0.0, 0.01,
+                0.01,
+                0.0,
+                0.0,
+                0.0,
+                0.01,
+                0.0,
+                0.0,
+                0.0,
+                0.01,
             ]
 
             msg.angular_velocity = self.current_angular_vel
             msg.angular_velocity_covariance = [
-                0.000003, 0.0, 0.0,
-                0.0, 0.000003, 0.0,
-                0.0, 0.0, 0.000003,
+                0.000003,
+                0.0,
+                0.0,
+                0.0,
+                0.000003,
+                0.0,
+                0.0,
+                0.0,
+                0.000003,
             ]
 
             msg.orientation.x = 0.0
@@ -278,7 +297,9 @@ class Ros2NMEADriver(object):
             if not math.isnan(parsed_sentence["latitude"]) and not math.isnan(parsed_sentence["longitude"]):
                 odom.pose.pose.position.x = parsed_sentence["latitude"]
                 odom.pose.pose.position.y = parsed_sentence["longitude"]
-                odom.pose.pose.position.z = parsed_sentence["altitude"] if not math.isnan(parsed_sentence["altitude"]) else 0.0
+                odom.pose.pose.position.z = (
+                    parsed_sentence["altitude"] if not math.isnan(parsed_sentence["altitude"]) else 0.0
+                )
 
             odom.pose.pose.orientation = self.current_orientation
 
@@ -295,12 +316,42 @@ class Ros2NMEADriver(object):
                 pos_variance = 10000.0
 
             odom.pose.covariance = [
-                pos_variance, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, pos_variance, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, pos_variance * 4, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0087**2, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.0087**2, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.017**2,
+                pos_variance,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                pos_variance,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                pos_variance * 4,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0087**2,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0087**2,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.017**2,
             ]
 
             odom.twist.twist.linear.x = parsed_sentence["vel_north"]
@@ -315,12 +366,42 @@ class Ros2NMEADriver(object):
                 odom.twist.twist.angular.z = 0.0
 
             odom.twist.covariance = [
-                0.1, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.1, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.000003, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.000003, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.000003,
+                0.1,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.1,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.1,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.000003,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.000003,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.000003,
             ]
 
             self.odometry_pub.publish(odom)
@@ -336,23 +417,41 @@ class Ros2NMEADriver(object):
 
         msg.orientation = self.current_orientation
         msg.orientation_covariance = [
-            0.0087**2, 0.0, 0.0,
-            0.0, 0.0087**2, 0.0,
-            0.0, 0.0, 0.017**2,
+            0.0087**2,
+            0.0,
+            0.0,
+            0.0,
+            0.0087**2,
+            0.0,
+            0.0,
+            0.0,
+            0.017**2,
         ]
 
         msg.linear_acceleration = self.current_linear_accel
         msg.linear_acceleration_covariance = [
-            0.01, 0.0, 0.0,
-            0.0, 0.01, 0.0,
-            0.0, 0.0, 0.01,
+            0.01,
+            0.0,
+            0.0,
+            0.0,
+            0.01,
+            0.0,
+            0.0,
+            0.0,
+            0.01,
         ]
 
         msg.angular_velocity = self.current_angular_vel
         msg.angular_velocity_covariance = [
-            0.000003, 0.0, 0.0,
-            0.0, 0.000003, 0.0,
-            0.0, 0.0, 0.000003,
+            0.000003,
+            0.0,
+            0.0,
+            0.0,
+            0.000003,
+            0.0,
+            0.0,
+            0.0,
+            0.000003,
         ]
 
         self.imu_data_pub.publish(msg)

@@ -71,9 +71,7 @@ def main(args=None):
             # Set timeout
             socket_.settimeout(timeout)
         except socket.error as exc:
-            driver.get_logger().error(
-                "Caught exception socket.error when setting up socket: %s" % exc
-            )
+            driver.get_logger().error("Caught exception socket.error when setting up socket: %s" % exc)
             sys.exit(1)
 
         # recv-loop: When we're connected, keep receiving stuff until that fails
@@ -91,14 +89,11 @@ def main(args=None):
                         driver.get_logger().warn(
                             "Value error, likely due to missing fields in the NMEA message. "
                             "Error was: %s. Please report this issue at github.com/ros-drivers/nmea_navsat_driver, "
-                            "including a bag file with the NMEA sentences that caused it."
-                            % e
+                            "including a bag file with the NMEA sentences that caused it." % e
                         )
 
             except socket.error as exc:
-                driver.get_logger().error(
-                    "Caught exception socket.error during recvfrom: %s" % exc
-                )
+                driver.get_logger().error("Caught exception socket.error during recvfrom: %s" % exc)
                 socket_.close()
                 # This will break out of the recv-loop so we start another iteration of the connection-loop
                 break

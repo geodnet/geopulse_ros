@@ -40,16 +40,12 @@ class NMEASerialNode(Node):
         use_rmc = self.get_parameter("useRMC").value
 
         # Create driver
-        self.driver = Ros2NMEADriver(
-            frame_id=frame_id, time_ref_source=time_ref_source, use_RMC=use_rmc
-        )
+        self.driver = Ros2NMEADriver(frame_id=frame_id, time_ref_source=time_ref_source, use_RMC=use_rmc)
 
         # Create publishers and assign to driver
         self.driver.fix_pub = self.create_publisher(NavSatFix, "fix", 10)
         self.driver.vel_pub = self.create_publisher(TwistStamped, "vel", 10)
-        self.driver.time_ref_pub = self.create_publisher(
-            TimeReference, "time_reference", 10
-        )
+        self.driver.time_ref_pub = self.create_publisher(TimeReference, "time_reference", 10)
         self.driver.imu_data_pub = self.create_publisher(Imu, "imu/data", 10)
         self.driver.imu_data_raw_pub = self.create_publisher(Imu, "imu/data_raw", 10)
         self.driver.odometry_pub = self.create_publisher(Odometry, "odometry/ins", 10)
@@ -90,9 +86,7 @@ class NMEASerialNode(Node):
 
                 # Process sentence
                 try:
-                    processed = self.driver.add_sentence(
-                        sentence, self.driver.get_frame_id(), timestamp
-                    )
+                    processed = self.driver.add_sentence(sentence, self.driver.get_frame_id(), timestamp)
                     if processed:
                         self.get_logger().debug(f"Processed: {sentence[:50]}")
                 except ValueError as e:

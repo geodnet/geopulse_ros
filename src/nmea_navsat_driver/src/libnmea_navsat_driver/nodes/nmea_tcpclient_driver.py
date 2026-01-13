@@ -34,9 +34,7 @@ def main(args=None):
 
     frame_id = driver.get_frame_id()
 
-    driver.get_logger().info(
-        "Using gnss sensor with ip {} and port {}".format(gnss_ip, gnss_port)
-    )
+    driver.get_logger().info("Using gnss sensor with ip {} and port {}".format(gnss_ip, gnss_port))
 
     # Connection-loop: connect and keep receiving. If receiving fails, reconnect
     # Connect to the gnss sensor using tcp
@@ -48,9 +46,7 @@ def main(args=None):
             # Connect to the gnss sensor
             gnss_socket.connect((gnss_ip, gnss_port))
         except socket.error as exc:
-            driver.get_logger().error(
-                "Caught exception socket.error when setting up socket: %s" % exc
-            )
+            driver.get_logger().error("Caught exception socket.error when setting up socket: %s" % exc)
             sys.exit(1)
 
         # recv-loop: When we're connected, keep receiving stuff until that fails
@@ -81,9 +77,7 @@ def main(args=None):
                         )
 
             except socket.error as exc:
-                driver.get_logger().error(
-                    "Caught exception socket.error when receiving: %s" % exc
-                )
+                driver.get_logger().error("Caught exception socket.error when receiving: %s" % exc)
                 gnss_socket.close()
                 break
 
