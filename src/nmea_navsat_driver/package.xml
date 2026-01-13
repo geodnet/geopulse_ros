@@ -8,11 +8,9 @@
         require or use the GPSD deamon.
     </description>
 
-    <maintainer email="evenator@gmail.com">Ed Venator</maintainer>
+    <maintainer email="nithya@geodnet.com">Nithya Srinivasan</maintainer>
 
     <license>BSD</license>
-
-    <url type="website">http://ros.org/wiki/nmea_navsat_driver</url>
 
     <author email="eric@ericperko.com">Eric Perko</author>
     <author>Steven Martin</author>
