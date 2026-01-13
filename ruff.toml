@@ -1,0 +1,87 @@
+# ruff.toml
+
+# ===================================================================================
+#  Base Linter and Formatter Configuration
+# ===================================================================================
+
+# Set the line length. The default is 88, which is the same as Black.
+# Some teams prefer 100 or 120.
+line-length = 120
+
+# Specify the target Python version. This helps Ruff apply version-specific rules,
+# like suggesting f-strings for older formatting methods.
+# Options: "py37", "py38", "py39", "py310", "py311", "py312"
+target-version = "py312"
+
+
+# ===================================================================================
+#  Rule Selection (Linter)
+# ===================================================================================
+#
+# 'select' enables specific rule codes. 'ignore' disables them.
+# The recommended approach is to 'select' broad categories and then 'ignore'
+# specific rules you find too noisy or don't fit your project.
+#
+# For a full list of rules, see: https://docs.astral.sh/ruff/rules/
+#
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (upgrade syntax to newer versions)
+    "B",   # flake8-bugbear (finds likely bugs and design problems)
+    "C4",  # flake8-comprehensions (encourages simpler comprehensions)
+    "SIM", # flake8-simplify (simplifies code)
+    "T20", # flake8-print (flags print statements, good for library/production code)
+]
+
+ignore = [
+    # Ignore specific rules if they don't fit your style.
+    # For example, some find B008 (function call in default argument) too strict.
+    # "B008",
+
+    # T201 is the rule against `print`. You might want to ignore this in scripts
+    # or during early development, but it's good practice for library code.
+    "T201",
+]
+
+# Allow autofix for all enabled rules. This lets you run `ruff check --fix .`
+# to automatically correct many issues.
+fixable = ["ALL"]
+unfixable = []
+
+# ===================================================================================
+#  File and Directory Exclusion
+# ===================================================================================
+
+# Exclude specific files and directories from linting and formatting.
+# Ruff respects .gitignore by default.
+exclude = ["README.md"]
+
+# ===================================================================================
+#  Formatter Configuration
+# ===================================================================================
+#
+# This section configures the code formatter. Ruff's formatter is designed to be
+# a drop-in replacement for Black.
+#
+[format]
+# Adheres to the Black code style by default. You can add overrides here
+# if needed, but it's generally recommended to stick to the defaults.
+quote-style = "double" # Use double quotes for strings
+indent-style = "space" # Use spaces for indentation
+
+
+# ===================================================================================
+#  Tool-Specific Settings
+# ===================================================================================
+
+[lint.isort]
+# Sorts imports automatically. The default settings are great.
+# This ensures your `import` statements are grouped and ordered consistently.
+# (e.g., standard library, third-party, then local application imports)
+known-first-party = [
+    "src",
+] # Replace "my_app" with your project's source directory name
