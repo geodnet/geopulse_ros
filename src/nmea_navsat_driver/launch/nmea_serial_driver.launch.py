@@ -29,11 +29,21 @@ def generate_launch_description():
         "config",
         "nmea_serial_driver.yaml",
     )
+
+    # Allow environment variable overrides
+    param_overrides = {}
+    if os.environ.get("NMEA_BAUD"):
+        param_overrides["baud"] = int(os.environ["NMEA_BAUD"])
+    if os.environ.get("NMEA_PORT"):
+        param_overrides["port"] = os.environ["NMEA_PORT"]
+    if os.environ.get("NMEA_FRAME_ID"):
+        param_overrides["frame_id"] = os.environ["NMEA_FRAME_ID"]
+
     driver_node = actions.Node(
         package="nmea_navsat_driver",
         executable="nmea_serial_driver",
         output="screen",
-        parameters=[config_file],
+        parameters=[config_file, param_overrides],
     )
 
     return LaunchDescription([driver_node])
