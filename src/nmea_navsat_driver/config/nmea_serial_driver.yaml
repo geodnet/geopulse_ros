@@ -1,4 +1,4 @@
-nmea_navsat_driver:
+nmea_serial_driver:
   ros__parameters:
     port: "/dev/tty.usbserial"
     baud: 115200

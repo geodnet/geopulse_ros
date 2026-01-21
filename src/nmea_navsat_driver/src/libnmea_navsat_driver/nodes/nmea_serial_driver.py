@@ -90,7 +90,7 @@ class NMEASerialNode(Node):
                     if processed:
                         self.get_logger().debug(f"Processed: {sentence[:50]}")
                 except ValueError as e:
-                    self.get_logger().warn(f"Error parsing sentence: {e}")
+                    self.get_logger().warning(f"Error parsing sentence: {e}")
                 except Exception as e:
                     self.get_logger().error(f"Unexpected error: {e}")
 

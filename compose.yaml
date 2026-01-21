@@ -15,7 +15,7 @@ services:
       - "${SERIAL_DEVICE:-/dev/ttyUSB1}:/dev/ttyUSB1"
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - NMEA_BAUD=${NMEA_BAUD:-4800}
+      - NMEA_BAUD=${NMEA_BAUD:-115200}
       - NMEA_PORT=${NMEA_PORT:-/dev/ttyUSB1}
       - NMEA_FRAME_ID=${NMEA_FRAME_ID:-gps}
     network_mode: host
