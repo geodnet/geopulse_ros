@@ -8,16 +8,22 @@ import math
 
 
 def safe_float(field):
+    """Safely convert field to float, handling null/empty fields."""
     try:
+        if not field or field.strip() == '':
+            return float("NaN")
         return float(field)
-    except ValueError:
+    except (ValueError, AttributeError):
         return float("NaN")
 
 
 def safe_int(field):
+    """Safely convert field to int, handling null/empty fields."""
     try:
+        if not field or field.strip() == '':
+            return 0
         return int(field)
-    except ValueError:
+    except (ValueError, AttributeError):
         return 0
 
 
@@ -191,7 +197,11 @@ def parse_PQTMSENMSG(sentence):
 
 
 def parse_PQTMDRPVA(sentence):
-    """Parse PQTMDRPVA message for INS position, velocity, and attitude"""
+    """Parse PQTMDRPVA message for INS position, velocity, and attitude
+    
+    Field 5 (latitude) and Field 6 (longitude) are typically in decimal degrees format,
+    not NMEA DDMM.MMMM format. This parser handles both formats.
+    """
     fields = sentence.split(",")
 
     if len(fields) < 16:
@@ -200,14 +210,45 @@ def parse_PQTMDRPVA(sentence):
     try:
         last_field = fields[15].split("*")[0] if "*" in fields[15] else fields[15]
 
+        
+        # Parse latitude - check if it's in NMEA format or decimal degrees
+        lat_str = fields[5]
+        lat_value = safe_float(lat_str)
+        
+        # If latitude is > 180, it's likely in DDMM.MMMM format
+        if not math.isnan(lat_value) and abs(lat_value) > 180:
+            # Convert from DDMM.MMMM to decimal degrees
+            lat_deg = int(lat_value / 100)
+            lat_min = lat_value - (lat_deg * 100)
+            latitude = lat_deg + (lat_min / 60)
+            if lat_value < 0:
+                latitude = -latitude
+        else:
+            latitude = lat_value
+        
+        # Parse longitude - check if it's in NMEA format or decimal degrees
+        lon_str = fields[6]
+        lon_value = safe_float(lon_str)
+        
+        # If longitude is > 180, it's likely in DDDMM.MMMM format
+        if not math.isnan(lon_value) and abs(lon_value) > 180:
+            # Convert from DDDMM.MMMM to decimal degrees
+            lon_deg = int(lon_value / 100)
+            lon_min = lon_value - (lon_deg * 100)
+            longitude = lon_deg + (lon_min / 60)
+            if lon_value < 0:
+                longitude = -longitude
+        else:
+            longitude = lon_value
+        
         data = {
             "sentence_type": "PQTMDRPVA",
             "msg_version": safe_int(fields[1]),
             "timestamp_ms": safe_int(fields[2]),
             "utc_time": convert_time(fields[3]),
             "solution_type": safe_int(fields[4]),
-            "latitude": safe_float(fields[5]),
-            "longitude": safe_float(fields[6]),
+            "latitude": latitude,
+            "longitude": longitude,
             "altitude": safe_float(fields[7]),
             "separation": safe_float(fields[8]),
             "vel_north": safe_float(fields[9]),
