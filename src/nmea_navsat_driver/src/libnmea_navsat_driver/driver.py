@@ -91,10 +91,10 @@ class Ros2NMEADriver(object):
     G_TO_MS2 = 9.80665
     DEG_TO_RAD = math.pi / 180.0
 
-    def __init__(self, frame_id="gps", time_ref_source=None, use_RMC=True):
+    def __init__(self, frame_id="gps", time_ref_source=None, use_rmc=True):
         self.frame_id = frame_id
         self.time_ref_source = time_ref_source if time_ref_source != "" else None
-        self.use_RMC = use_RMC
+        self.use_RMC = use_rmc
 
         self.fix_pub = None
         self.vel_pub = None

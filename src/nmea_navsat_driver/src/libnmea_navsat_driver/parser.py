@@ -158,9 +158,7 @@ def parse_GPVTG(nmea_sentence):
 
     try:
         track_true = safe_float(fields[1])
-        track_magnetic = safe_float(fields[3])
         speed_knots = safe_float(fields[5])
-        speed_kph = safe_float(fields[7])
 
         speed_mps = convert_knots_to_mps(speed_knots)
 
