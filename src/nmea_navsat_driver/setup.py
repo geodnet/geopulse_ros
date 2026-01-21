@@ -26,6 +26,8 @@ setup(
             "nmea_serial_driver = libnmea_navsat_driver.nodes.nmea_serial_driver:main",
             "nmea_topic_driver = libnmea_navsat_driver.nodes.nmea_topic_driver:main",
             "nmea_topic_serial_reader = libnmea_navsat_driver.nodes.nmea_topic_serial_reader:main",
+            "odom_tf_broadcaster = libnmea_navsat_driver.nodes.odom_tf_broadcaster:main",
+            "twist_tf_broadcaster = libnmea_navsat_driver.nodes.twist_tf_broadcaster:main",
         ],
     },
 )

@@ -32,6 +32,57 @@ def euler_to_quaternion(roll, pitch, yaw):
     return (x, y, z, w)
 
 
+def geodetic_to_enu(lat, lon, alt, lat_origin, lon_origin, alt_origin):
+    """
+    Convert geodetic coordinates (lat, lon, alt) to ENU (East, North, Up)
+    coordinates relative to an origin point.
+    
+    lat, lon in degrees
+    alt in meters
+    Returns: (east, north, up) in meters
+    """
+    # WGS84 parameters
+    a = 6378137.0  # Semi-major axis
+    f = 1.0 / 298.257223563  # Flattening
+    e2 = 2 * f - f * f  # Square of eccentricity
+    
+    # Convert to radians
+    lat_rad = math.radians(lat)
+    lon_rad = math.radians(lon)
+    lat_origin_rad = math.radians(lat_origin)
+    lon_origin_rad = math.radians(lon_origin)
+    
+    # Calculate radius of curvature in prime vertical
+    N_origin = a / math.sqrt(1 - e2 * math.sin(lat_origin_rad)**2)
+    N = a / math.sqrt(1 - e2 * math.sin(lat_rad)**2)
+    
+    # Convert to ECEF (Earth-Centered, Earth-Fixed)
+    x_origin = (N_origin + alt_origin) * math.cos(lat_origin_rad) * math.cos(lon_origin_rad)
+    y_origin = (N_origin + alt_origin) * math.cos(lat_origin_rad) * math.sin(lon_origin_rad)
+    z_origin = (N_origin * (1 - e2) + alt_origin) * math.sin(lat_origin_rad)
+    
+    x = (N + alt) * math.cos(lat_rad) * math.cos(lon_rad)
+    y = (N + alt) * math.cos(lat_rad) * math.sin(lon_rad)
+    z = (N * (1 - e2) + alt) * math.sin(lat_rad)
+    
+    # Calculate difference in ECEF
+    dx = x - x_origin
+    dy = y - y_origin
+    dz = z - z_origin
+    
+    # Rotation matrix from ECEF to ENU
+    sin_lat = math.sin(lat_origin_rad)
+    cos_lat = math.cos(lat_origin_rad)
+    sin_lon = math.sin(lon_origin_rad)
+    cos_lon = math.cos(lon_origin_rad)
+    
+    east = -sin_lon * dx + cos_lon * dy
+    north = -sin_lat * cos_lon * dx - sin_lat * sin_lon * dy + cos_lat * dz
+    up = cos_lat * cos_lon * dx + cos_lat * sin_lon * dy + sin_lat * dz
+    
+    return (east, north, up)
+
+
 class Ros2NMEADriver(object):
     """
     ROS2 driver for NMEA GNSS devices with IMU support.
@@ -56,15 +107,21 @@ class Ros2NMEADriver(object):
         self.current_fix.header.frame_id = self.frame_id
         self.current_fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
 
-        self.current_linear_accel = Vector3()
-        self.current_angular_vel = Vector3()
+        # IMU data - NO DEFAULT VALUES, only set from device
+        self.current_linear_accel = None
+        self.current_angular_vel = None
         self.has_imu_raw_data = False
 
-        self.current_orientation = Quaternion()
-        self.current_orientation.w = 1.0
+        # Orientation data - NO DEFAULT VALUES, only set from device
+        self.current_orientation = None
         self.has_orientation_data = False
 
         self.valid_fix = False
+        
+        # ENU origin (will be set from first valid RTK position)
+        self.enu_origin_lat = None
+        self.enu_origin_lon = None
+        self.enu_origin_alt = None
 
     def get_frame_id(self):
         return self.frame_id
@@ -204,20 +261,38 @@ class Ros2NMEADriver(object):
             self.vel_pub.publish(twist)
 
     def handle_pqtmsenmsg(self, parsed_sentence, timestamp):
-        """Handle PQTMSENMSG message - IMU Raw Data"""
+        """Handle PQTMSENMSG message - IMU Raw Data
+        
+        Device frame: X=forward, Y=right, Z=DOWN (NED body frame)
+        ROS convention: X=forward, Y=left, Z=UP (FLU body frame for robots)
+        
+        We convert from NED to FLU body frame for ROS compatibility.
+        The orientation quaternion will describe rotation from FLU body to ENU world.
+        """
         if parsed_sentence is None:
             return
 
-        self.current_linear_accel.x = parsed_sentence["acc_x_g"] * self.G_TO_MS2
-        self.current_linear_accel.y = parsed_sentence["acc_y_g"] * self.G_TO_MS2
-        self.current_linear_accel.z = parsed_sentence["acc_z_g"] * self.G_TO_MS2
+        # Convert from NED body frame to FLU (Forward-Left-Up) body frame for ROS
+        # Device NED:     X=fwd, Y=right, Z=down
+        # ROS FLU:        X=fwd, Y=left,  Z=up
+        # Conversion:     X_flu = X_ned, Y_flu = -Y_ned, Z_flu = -Z_ned
+        
+        accel = Vector3()
+        accel.x = parsed_sentence["acc_x_g"] * self.G_TO_MS2      # forward (same)
+        accel.y = -parsed_sentence["acc_y_g"] * self.G_TO_MS2     # right -> left (negate)
+        accel.z = -parsed_sentence["acc_z_g"] * self.G_TO_MS2     # down -> up (negate)
+        
+        gyro = Vector3()
+        gyro.x = parsed_sentence["gyro_x_deg"] * self.DEG_TO_RAD   # roll rate (same)
+        gyro.y = -parsed_sentence["gyro_y_deg"] * self.DEG_TO_RAD  # pitch rate (negate)
+        gyro.z = -parsed_sentence["gyro_z_deg"] * self.DEG_TO_RAD  # yaw rate (negate)
 
-        self.current_angular_vel.x = parsed_sentence["gyro_x_deg"] * self.DEG_TO_RAD
-        self.current_angular_vel.y = parsed_sentence["gyro_y_deg"] * self.DEG_TO_RAD
-        self.current_angular_vel.z = parsed_sentence["gyro_z_deg"] * self.DEG_TO_RAD
-
+        # Only update if we have valid data
+        self.current_linear_accel = accel
+        self.current_angular_vel = gyro
         self.has_imu_raw_data = True
 
+        # Publish raw IMU (no orientation)
         if self.imu_data_raw_pub:
             msg = Imu()
             msg.header.stamp = timestamp
@@ -249,172 +324,202 @@ class Ros2NMEADriver(object):
                 0.000003,
             ]
 
+            # No orientation available in raw message
             msg.orientation.x = 0.0
             msg.orientation.y = 0.0
             msg.orientation.z = 0.0
-            msg.orientation.w = 1.0
-
+            msg.orientation.w = 0.0
             msg.orientation_covariance = [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
             self.imu_data_raw_pub.publish(msg)
 
+        # Publish full IMU if we also have orientation
         if self.has_orientation_data and self.imu_data_pub:
             self.publish_full_imu(timestamp)
 
     def handle_pqtmdrpva(self, parsed_sentence, timestamp):
-        """Handle PQTMDRPVA message - INS Data"""
+        """Handle PQTMDRPVA message - INS Data
+        
+        Device frame: X=forward, Y=right, Z=DOWN (NED body frame)
+        Device outputs: Roll (rotation about X), Pitch (rotation about Y), 
+                       Heading (azimuth, 0=North, clockwise positive when viewed from above)
+        
+        We convert to ROS FLU body frame (X=fwd, Y=left, Z=up), then to ENU world frame.
+        """
         if parsed_sentence is None:
             return
+            
+        print(
+            f"ROLL={parsed_sentence['roll_deg']:.3f} "
+            f"PITCH={parsed_sentence['pitch_deg']:.3f} "
+            f"HEADING={parsed_sentence['heading_deg']:.3f}"
+        )
+        
+        # Device outputs RPY in NED body frame (X=fwd, Y=right, Z=down)
+        # Roll: rotation about X-axis (right side down is positive in NED)
+        # Pitch: rotation about Y-axis (nose up is positive in NED, but negative pitch angle)
+        # Heading: azimuth angle, 0°=North, clockwise positive (90°=East, 180°=South, 270°=West)
+        
+        # Convert from NED body frame angles to FLU body frame angles
+        # In NED: positive roll = right side down, positive pitch = nose up (but reported as negative)
+        # In FLU: positive roll = left side down, positive pitch = nose up
+        roll_ned = parsed_sentence["roll_deg"] * self.DEG_TO_RAD
+        pitch_ned = parsed_sentence["pitch_deg"] * self.DEG_TO_RAD
+        heading_rad = parsed_sentence["heading_deg"] * self.DEG_TO_RAD
+        
+        # Convert NED body angles to FLU body angles
+        # Roll: NED right-down -> FLU left-down (negate)
+        # Pitch: same sign convention (nose up positive)
+        roll_flu = -roll_ned
+        pitch_flu = pitch_ned
+        
+        # Convert heading (0=North, CW) to ENU yaw (0=East, CCW)
+        # When heading=0° (North), we want yaw=90° (pointing North in ENU is +Y)
+        # When heading=90° (East), we want yaw=0° (pointing East in ENU is +X)
+        yaw_enu = (math.pi / 2) - heading_rad
+        yaw_enu = (yaw_enu + math.pi) % (2 * math.pi) - math.pi
+        
+        print(f"  NED: roll={roll_ned:.4f}, pitch={pitch_ned:.4f}, heading={heading_rad:.4f}")
+        print(f"  FLU->ENU: roll={roll_flu:.4f}, pitch={pitch_flu:.4f}, yaw={yaw_enu:.4f}")
+        
+        # Convert Euler angles (FLU body frame) to quaternion (body to ENU)
+        qx, qy, qz, qw = euler_to_quaternion(roll_flu, pitch_flu, yaw_enu)
+        
+        print(f"  quat: x={qx:.4f}, y={qy:.4f}, z={qz:.4f}, w={qw:.4f}")
 
-        roll_rad = parsed_sentence["roll_deg"] * self.DEG_TO_RAD
-        pitch_rad = parsed_sentence["pitch_deg"] * self.DEG_TO_RAD
-        yaw_rad = parsed_sentence["heading_deg"] * self.DEG_TO_RAD
-
-        qx, qy, qz, qw = euler_to_quaternion(roll_rad, pitch_rad, yaw_rad)
-
-        self.current_orientation.x = qx
-        self.current_orientation.y = qy
-        self.current_orientation.z = qz
-        self.current_orientation.w = qw
+        # Store orientation
+        orientation = Quaternion()
+        orientation.x = qx
+        orientation.y = qy
+        orientation.z = qz
+        orientation.w = qw
+        
+        self.current_orientation = orientation
         self.has_orientation_data = True
+        
+        print(f"  stored: x={self.current_orientation.x:.4f}, w={self.current_orientation.w:.4f}")
 
+        # Publish velocity from PQTMDRPVA (convert NED to ENU frame)
         if self.vel_pub:
             twist = TwistStamped()
             twist.header.stamp = timestamp
             twist.header.frame_id = self.frame_id
-            twist.twist.linear.x = parsed_sentence["speed"]
+            # Convert velocities from NED to ENU
+            twist.twist.linear.x = parsed_sentence["vel_east"]   # East (same)
+            twist.twist.linear.y = parsed_sentence["vel_north"]  # North (same)
+            twist.twist.linear.z = -parsed_sentence["vel_down"]  # Down -> Up (negate)
+            # Add angular velocity if available (already converted to FLU in handle_pqtmsenmsg)
+            if self.has_imu_raw_data:
+                twist.twist.angular = self.current_angular_vel
             self.vel_pub.publish(twist)
 
+        # Publish full IMU data if available
         if self.has_imu_raw_data and self.imu_data_pub:
             self.publish_full_imu(timestamp)
 
-        if self.odometry_pub:
-            odom = Odometry()
-            odom.header.stamp = timestamp
-            odom.header.frame_id = "map"
-            odom.child_frame_id = self.frame_id
-
-            if not math.isnan(parsed_sentence["latitude"]) and not math.isnan(parsed_sentence["longitude"]):
-                odom.pose.pose.position.x = parsed_sentence["latitude"]
-                odom.pose.pose.position.y = parsed_sentence["longitude"]
-                odom.pose.pose.position.z = (
-                    parsed_sentence["altitude"] if not math.isnan(parsed_sentence["altitude"]) else 0.0
+        # Publish odometry with ENU coordinates
+        if not self.odometry_pub:
+            return
+        
+        odom = Odometry()
+        odom.header.stamp = timestamp
+        odom.header.frame_id = "odom"
+        odom.child_frame_id = self.frame_id
+        
+        # Set orientation (in ENU frame)
+        odom.pose.pose.orientation = self.current_orientation
+        
+        lat = parsed_sentence["latitude"]
+        lon = parsed_sentence["longitude"]
+        alt = parsed_sentence["altitude"]
+        sol_type = parsed_sentence["solution_type"]
+        
+        # Check if we have valid position data
+        if not (math.isnan(lat) or math.isnan(lon) or math.isnan(alt)):
+        
+            # Initialize ENU origin from first RTK fix (solution type 4 or 5)
+            if self.enu_origin_lat is None:
+                # Only set origin if we have RTK fix for accuracy
+                if sol_type in [4, 5]:
+                    self.enu_origin_lat = lat
+                    self.enu_origin_lon = lon
+                    self.enu_origin_alt = alt
+                    print(f"ENU origin set at: {lat:.8f}, {lon:.8f}, {alt:.2f} (RTK)")
+            
+            # Only compute ENU position if origin is set
+            if self.enu_origin_lat is not None:
+                # Convert to ENU coordinates
+                east, north, up = geodetic_to_enu(
+                    lat, lon, alt,
+                    self.enu_origin_lat, self.enu_origin_lon, self.enu_origin_alt
                 )
 
-            odom.pose.pose.orientation = self.current_orientation
+                # Set position in ENU coordinates
+                odom.pose.pose.position.x = east
+                odom.pose.pose.position.y = north
+                odom.pose.pose.position.z = up
 
-            sol_type = parsed_sentence["solution_type"]
-            if sol_type == 4:
-                pos_variance = 0.04
-            elif sol_type == 5:
-                pos_variance = 1.0
-            elif sol_type == 2:
-                pos_variance = 4.0
-            elif sol_type == 1:
-                pos_variance = 25.0
-            else:
-                pos_variance = 10000.0
+        # Set position covariance based on solution type
+        if sol_type == 4:  # RTK Fixed
+            pos_variance = 0.04
+        elif sol_type == 5:  # RTK Float
+            pos_variance = 1.0
+        elif sol_type == 2:  # DGPS
+            pos_variance = 4.0
+        elif sol_type == 1:  # Single point
+            pos_variance = 25.0
+        else:
+            pos_variance = 10000.0
 
-            odom.pose.covariance = [
-                pos_variance,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                pos_variance,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                pos_variance * 4,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0087**2,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0087**2,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.017**2,
-            ]
+        odom.pose.covariance = [
+            pos_variance, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, pos_variance, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, pos_variance * 4, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0087**2, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0087**2, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.017**2,
+        ]
 
-            odom.twist.twist.linear.x = parsed_sentence["vel_north"]
-            odom.twist.twist.linear.y = parsed_sentence["vel_east"]
-            odom.twist.twist.linear.z = -parsed_sentence["vel_down"]
+        # Set velocity in ENU frame (convert NED velocities to ENU)
+        # Device outputs: vel_north, vel_east, vel_down (NED)
+        # ENU frame needs: vel_east, vel_north, vel_up
+        odom.twist.twist.linear.x = parsed_sentence["vel_east"]   # East (same)
+        odom.twist.twist.linear.y = parsed_sentence["vel_north"]  # North (same)
+        odom.twist.twist.linear.z = -parsed_sentence["vel_down"]  # Down -> Up (negate)
 
-            if self.has_imu_raw_data:
-                odom.twist.twist.angular = self.current_angular_vel
-            else:
-                odom.twist.twist.angular.x = 0.0
-                odom.twist.twist.angular.y = 0.0
-                odom.twist.twist.angular.z = 0.0
+        # Set angular velocity if available (body frame)
+        if self.has_imu_raw_data:
+            odom.twist.twist.angular = self.current_angular_vel
+        else:
+            odom.twist.twist.angular.x = 0.0
+            odom.twist.twist.angular.y = 0.0
+            odom.twist.twist.angular.z = 0.0
 
-            odom.twist.covariance = [
-                0.1,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.1,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.1,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-            ]
+        odom.twist.covariance = [
+            0.1, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.1, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.000003, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.000003, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.000003,
+        ]
 
-            self.odometry_pub.publish(odom)
+        self.odometry_pub.publish(odom)
 
     def publish_full_imu(self, timestamp):
-        """Publish full 9-DOF IMU message"""
+        """Publish full 9-DOF IMU message with orientation"""
         if not self.imu_data_pub:
+            return
+        
+        # Only publish if we have both orientation and raw IMU data
+        if not self.has_orientation_data or not self.has_imu_raw_data:
             return
 
         msg = Imu()
         msg.header.stamp = timestamp
         msg.header.frame_id = self.frame_id
 
+        # Orientation is in ENU frame (from INS)
         msg.orientation = self.current_orientation
         msg.orientation_covariance = [
             0.0087**2,
@@ -428,6 +533,7 @@ class Ros2NMEADriver(object):
             0.017**2,
         ]
 
+        # Linear acceleration and angular velocity are in body frame
         msg.linear_acceleration = self.current_linear_accel
         msg.linear_acceleration_covariance = [
             0.01,
