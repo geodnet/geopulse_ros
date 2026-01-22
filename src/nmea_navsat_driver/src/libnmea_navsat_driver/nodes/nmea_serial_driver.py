@@ -18,12 +18,17 @@ from geometry_msgs.msg import TwistStamped
 
 from nav_msgs.msg import Odometry
 
+from std_msgs.msg import UInt8MultiArray
+
 
 class NMEASerialNode(Node):
     """ROS2 node for reading NMEA data from a serial port."""
 
     def __init__(self):
         super().__init__("nmea_serial_driver")
+
+        # Instance variable for reading raw bytes
+        self.buffer = bytearray()
 
         # Declare parameters
         self.declare_parameter("port", "/dev/ttyUSB0")
@@ -49,6 +54,7 @@ class NMEASerialNode(Node):
         self.driver.imu_data_pub = self.create_publisher(Imu, "imu/data", 10)
         self.driver.imu_data_raw_pub = self.create_publisher(Imu, "imu/data_raw", 10)
         self.driver.odometry_pub = self.create_publisher(Odometry, "odometry/ins", 10)
+        self.driver.rtcm_pub = self.create_publisher(UInt8MultiArray, "rtcm", 10)
 
         # Open serial port
         try:
@@ -67,32 +73,54 @@ class NMEASerialNode(Node):
     def read_serial(self):
         """Read data from serial port and process NMEA sentences."""
         try:
-            # Process all available lines in the buffer
-            while self.serial_port.in_waiting > 0:
-                # Read a line
-                data = self.serial_port.readline()
+            # Read available data into buffer
+            if self.serial_port.in_waiting > 0:
+                self.buffer.extend(self.serial_port.read(self.serial_port.in_waiting))
 
-                # Decode and strip whitespace
-                try:
-                    sentence = data.decode("ascii", errors="ignore").strip()
-                except UnicodeDecodeError:
-                    continue
-
-                if not sentence:
-                    continue
-
-                # Get current timestamp
-                timestamp = self.get_clock().now().to_msg()
-
-                # Process sentence
-                try:
-                    processed = self.driver.add_sentence(sentence, self.driver.get_frame_id(), timestamp)
-                    if processed:
-                        self.get_logger().debug(f"Processed: {sentence[:50]}")
-                except ValueError as e:
-                    self.get_logger().warning(f"Error parsing sentence: {e}")
-                except Exception as e:
-                    self.get_logger().error(f"Unexpected error: {e}")
+            # Process buffer - extract NMEA and RTCM messages
+            while len(self.buffer) > 0:
+                if self.buffer[0] == ord('$'):  # NMEA sentence
+                    # Find newline
+                    newline_idx = self.buffer.find(b'\n')
+                    if newline_idx == -1:
+                        break  # Incomplete sentence
+                    sentence = self.buffer[:newline_idx].decode('ascii', errors='ignore').strip()
+                    self.buffer = self.buffer[newline_idx+1:]
+                    if not sentence:
+                        continue
+                    
+                    # Get current timestamp
+                    timestamp = self.get_clock().now().to_msg()
+                    
+                    # Process NMEA sentence
+                    try:
+                        processed = self.driver.add_sentence(sentence, self.driver.get_frame_id(), timestamp)
+                        if processed:
+                            self.get_logger().debug(f"Processed: {sentence[:50]}")
+                    except ValueError as e:
+                        self.get_logger().warning(f"Error parsing sentence: {e}")
+                    except Exception as e:
+                        self.get_logger().error(f"Unexpected error: {e}")
+                    
+                elif self.buffer[0] == 0xD3:  # RTCM message
+                    # Check if we have enough bytes for header (3 bytes minimum)
+                    if len(self.buffer) < 3:
+                        break
+                    # Extract length from RTCM header (bits 14-23 of first 3 bytes)
+                    length = ((self.buffer[1] & 0x03) << 8) | self.buffer[2]
+                    msg_length = 3 + length + 3  # preamble + payload + CRC
+                    if len(self.buffer) < msg_length:
+                        break  # Incomplete message
+                    rtcm_msg = bytes(self.buffer[:msg_length])
+                    self.buffer = self.buffer[msg_length:]
+                    timestamp = self.get_clock().now().to_msg()
+                    # Printing to debug
+                    print(f"Extracted RTCM from buffer: {len(rtcm_msg)} bytes, first 6: {' '.join([f'{b:02X}' for b in rtcm_msg[:6]])}")
+                    self.driver.add_rtcm_message(rtcm_msg, timestamp)
+                    
+                else:
+                    # Unknown byte, skip it
+                    self.buffer = self.buffer[1:]
 
         except serial.SerialException as e:
             self.get_logger().error(f"Serial port error: {e}")
