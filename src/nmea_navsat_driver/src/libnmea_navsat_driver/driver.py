@@ -8,6 +8,7 @@ import math
 from sensor_msgs.msg import NavSatFix, NavSatStatus, TimeReference, Imu
 from geometry_msgs.msg import TwistStamped, Quaternion, Vector3
 from nav_msgs.msg import Odometry
+from std_msgs.msg import UInt8MultiArray
 
 from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
 import libnmea_navsat_driver.parser
@@ -91,10 +92,10 @@ class Ros2NMEADriver(object):
     G_TO_MS2 = 9.80665
     DEG_TO_RAD = math.pi / 180.0
 
-    def __init__(self, frame_id="gps", time_ref_source=None, use_rmc=True):
+    def __init__(self, frame_id="gps", time_ref_source=None, use_RMC=True):
         self.frame_id = frame_id
         self.time_ref_source = time_ref_source if time_ref_source != "" else None
-        self.use_RMC = use_rmc
+        self.use_RMC = use_RMC
 
         self.fix_pub = None
         self.vel_pub = None
@@ -102,6 +103,7 @@ class Ros2NMEADriver(object):
         self.imu_data_pub = None
         self.imu_data_raw_pub = None
         self.odometry_pub = None
+        self.rtcm_pub = None
 
         self.current_fix = NavSatFix()
         self.current_fix.header.frame_id = self.frame_id
@@ -561,3 +563,34 @@ class Ros2NMEADriver(object):
         ]
 
         self.imu_data_pub.publish(msg)
+
+    def add_rtcm_message(self, rtcm_bytes, timestamp=None):
+        """Process RTCM binary message"""
+        if len(rtcm_bytes) < 6:  # Minimum RTCM message size
+            return False
+        
+        if rtcm_bytes[0] != 0xD3:
+            return False
+        
+        self.handle_rtcm(rtcm_bytes, timestamp)
+        return True
+
+    def handle_rtcm(self, rtcm_bytes, timestamp):
+        """Handle RTCM binary message - publish to topic"""
+        # Debug: Print raw bytes and message type
+        if len(rtcm_bytes) >= 6:
+            # Print first 6 bytes in hex
+            hex_str = ' '.join([f'{b:02X}' for b in rtcm_bytes[:6]])
+            
+            # Extract message type
+            msg_type = (rtcm_bytes[3] << 4) | (rtcm_bytes[4] >> 4)
+            length = ((rtcm_bytes[1] & 0x03) << 8) | rtcm_bytes[2]
+            
+            print(f"RTCM: [{hex_str}...] Type={msg_type}, Len={length}, Total={len(rtcm_bytes)} bytes")
+
+        if not self.rtcm_pub:
+            return
+        
+        msg = UInt8MultiArray()
+        msg.data = list(rtcm_bytes)
+        self.rtcm_pub.publish(msg)
