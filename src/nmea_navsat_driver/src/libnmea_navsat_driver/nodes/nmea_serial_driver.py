@@ -18,7 +18,7 @@ from geometry_msgs.msg import TwistStamped
 
 from nav_msgs.msg import Odometry
 
-from std_msgs.msg import UInt8MultiArray
+from sensor_msgs.msg import CompressedImage
 
 
 class NMEASerialNode(Node):
@@ -35,17 +35,15 @@ class NMEASerialNode(Node):
         self.declare_parameter("baud", 115200)
         self.declare_parameter("frame_id", "gps")
         self.declare_parameter("time_ref_source", "")
-        self.declare_parameter("useRMC", False)
 
         # Get parameters
         port = self.get_parameter("port").value
         baud = self.get_parameter("baud").value
         frame_id = self.get_parameter("frame_id").value
         time_ref_source = self.get_parameter("time_ref_source").value
-        use_rmc = self.get_parameter("useRMC").value
 
-        # Create driver
-        self.driver = Ros2NMEADriver(frame_id=frame_id, time_ref_source=time_ref_source, use_RMC=use_rmc)
+        # Create driver (no use_RMC passed)
+        self.driver = Ros2NMEADriver(frame_id=frame_id, time_ref_source=time_ref_source)
 
         # Create publishers and assign to driver
         self.driver.fix_pub = self.create_publisher(NavSatFix, "fix", 10)
@@ -54,7 +52,7 @@ class NMEASerialNode(Node):
         self.driver.imu_data_pub = self.create_publisher(Imu, "imu/data", 10)
         self.driver.imu_data_raw_pub = self.create_publisher(Imu, "imu/data_raw", 10)
         self.driver.odometry_pub = self.create_publisher(Odometry, "odometry/ins", 10)
-        self.driver.rtcm_pub = self.create_publisher(UInt8MultiArray, "rtcm", 10)
+        self.driver.rtcm_pub = self.create_publisher(CompressedImage, "rtcm", 10)
 
         # Open serial port
         try:
@@ -89,12 +87,9 @@ class NMEASerialNode(Node):
                     if not sentence:
                         continue
                     
-                    # Get current timestamp
-                    timestamp = self.get_clock().now().to_msg()
-                    
-                    # Process NMEA sentence
+                    # Process NMEA sentence (No ROS timestamp passed)
                     try:
-                        processed = self.driver.add_sentence(sentence, self.driver.get_frame_id(), timestamp)
+                        processed = self.driver.add_sentence(sentence, self.driver.get_frame_id())
                         if processed:
                             self.get_logger().debug(f"Processed: {sentence[:50]}")
                     except ValueError as e:
@@ -113,10 +108,9 @@ class NMEASerialNode(Node):
                         break  # Incomplete message
                     rtcm_msg = bytes(self.buffer[:msg_length])
                     self.buffer = self.buffer[msg_length:]
-                    timestamp = self.get_clock().now().to_msg()
-                    # Printing to debug
-                    print(f"Extracted RTCM from buffer: {len(rtcm_msg)} bytes, first 6: {' '.join([f'{b:02X}' for b in rtcm_msg[:6]])}")
-                    self.driver.add_rtcm_message(rtcm_msg, timestamp)
+
+                    # Process RTCM (No ROS timestamp passed)
+                    self.driver.handle_rtcm(rtcm_msg)
                     
                 else:
                     # Unknown byte, skip it

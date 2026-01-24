@@ -25,7 +25,6 @@ setup(
         "console_scripts": [
             "nmea_serial_driver = libnmea_navsat_driver.nodes.nmea_serial_driver:main",
             "odom_tf_broadcaster = libnmea_navsat_driver.nodes.odom_tf_broadcaster:main",
-            "twist_tf_broadcaster = libnmea_navsat_driver.nodes.twist_tf_broadcaster:main",
         ],
     },
 )
