@@ -8,10 +8,12 @@ import math
 from sensor_msgs.msg import NavSatFix, NavSatStatus, TimeReference, Imu
 from geometry_msgs.msg import TwistStamped, Quaternion, Vector3
 from nav_msgs.msg import Odometry
-from std_msgs.msg import UInt8MultiArray
+from sensor_msgs.msg import CompressedImage
 
 from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
 import libnmea_navsat_driver.parser
+
+from builtin_interfaces.msg import Time as TimeMsg
 
 
 def euler_to_quaternion(roll, pitch, yaw):
@@ -37,10 +39,6 @@ def geodetic_to_enu(lat, lon, alt, lat_origin, lon_origin, alt_origin):
     """
     Convert geodetic coordinates (lat, lon, alt) to ENU (East, North, Up)
     coordinates relative to an origin point.
-    
-    lat, lon in degrees
-    alt in meters
-    Returns: (east, north, up) in meters
     """
     # WGS84 parameters
     a = 6378137.0  # Semi-major axis
@@ -92,10 +90,9 @@ class Ros2NMEADriver(object):
     G_TO_MS2 = 9.80665
     DEG_TO_RAD = math.pi / 180.0
 
-    def __init__(self, frame_id="gps", time_ref_source=None, use_RMC=True):
+    def __init__(self, frame_id="gps", time_ref_source=None):
         self.frame_id = frame_id
         self.time_ref_source = time_ref_source if time_ref_source != "" else None
-        self.use_RMC = use_RMC
 
         self.fix_pub = None
         self.vel_pub = None
@@ -108,6 +105,9 @@ class Ros2NMEADriver(object):
         self.current_fix = NavSatFix()
         self.current_fix.header.frame_id = self.frame_id
         self.current_fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
+
+        # Track the latest UTC time for messages that don't have their own timestamp
+        self.latest_utc_time = TimeMsg()
 
         # IMU data - NO DEFAULT VALUES, only set from device
         self.current_linear_accel = None
@@ -128,7 +128,7 @@ class Ros2NMEADriver(object):
     def get_frame_id(self):
         return self.frame_id
 
-    def add_sentence(self, nmea_string, frame_id, timestamp=None):
+    def add_sentence(self, nmea_string, frame_id):
         """
         Parse an NMEA sentence and publish ROS2 messages.
         """
@@ -153,26 +153,29 @@ class Ros2NMEADriver(object):
         sentence_type = parsed_sentence["sentence_type"]
 
         if sentence_type == "GGA":
-            self.handle_gga(parsed_sentence, timestamp)
-            return True
-        elif sentence_type == "RMC":
-            self.handle_rmc(parsed_sentence, timestamp)
+            self.handle_gga(parsed_sentence)
             return True
         elif sentence_type == "VTG":
-            self.handle_vtg(parsed_sentence, timestamp)
+            self.handle_vtg(parsed_sentence)
             return True
         elif sentence_type == "PQTMSENMSG":
-            self.handle_pqtmsenmsg(parsed_sentence, timestamp)
+            self.handle_pqtmsenmsg(parsed_sentence)
             return True
         elif sentence_type == "PQTMDRPVA":
-            self.handle_pqtmdrpva(parsed_sentence, timestamp)
+            self.handle_pqtmdrpva(parsed_sentence)
             return True
 
         return False
 
-    def handle_gga(self, parsed_sentence, timestamp):
+    def handle_gga(self, parsed_sentence):
         """Handle GGA message - GPS Fix Data"""
-        self.current_fix.header.stamp = timestamp
+        utc_time = parsed_sentence["utc_time"]
+        if not math.isnan(utc_time):
+            self.latest_utc_time = self.convert_gps_time_to_ros(utc_time)
+            self.current_fix.header.stamp = self.latest_utc_time
+        else:
+            # Cannot timestamp strictly with UTC if no UTC time is present
+            return 
 
         if not math.isnan(parsed_sentence["latitude"]):
             self.current_fix.latitude = parsed_sentence["latitude"]
@@ -216,44 +219,23 @@ class Ros2NMEADriver(object):
 
         if self.time_ref_source and self.time_ref_pub:
             time_ref = TimeReference()
-            time_ref.header.stamp = timestamp
+            time_ref.header.stamp = self.latest_utc_time
             time_ref.header.frame_id = self.frame_id
 
-            utc_time = parsed_sentence["utc_time"]
-            if not math.isnan(utc_time):
-                from builtin_interfaces.msg import Time as TimeMsg
+            time_ref.time_ref = TimeMsg()
+            time_ref.time_ref.sec = int(utc_time)
+            time_ref.time_ref.nanosec = int((utc_time % 1) * 1e9)
+            time_ref.source = self.time_ref_source
+            self.time_ref_pub.publish(time_ref)
 
-                time_ref.time_ref = TimeMsg()
-                time_ref.time_ref.sec = int(utc_time)
-                time_ref.time_ref.nanosec = int((utc_time % 1) * 1e9)
-                time_ref.source = self.time_ref_source
-                self.time_ref_pub.publish(time_ref)
-
-    def handle_rmc(self, parsed_sentence, timestamp):
-        """Handle RMC message"""
-        if not self.use_RMC:
-            return
-
-        self.current_fix.header.stamp = timestamp
-
-        if parsed_sentence["fix_valid"]:
-            if not math.isnan(parsed_sentence["latitude"]):
-                self.current_fix.latitude = parsed_sentence["latitude"]
-            if not math.isnan(parsed_sentence["longitude"]):
-                self.current_fix.longitude = parsed_sentence["longitude"]
-
-            self.current_fix.status.status = NavSatStatus.STATUS_FIX
-            self.current_fix.status.service = NavSatStatus.SERVICE_GPS
-        else:
-            self.current_fix.status.status = NavSatStatus.STATUS_NO_FIX
-
-        if self.fix_pub:
-            self.fix_pub.publish(self.current_fix)
-
-    def handle_vtg(self, parsed_sentence, timestamp):
+    def handle_vtg(self, parsed_sentence):
         """Handle VTG message"""
+        # VTG doesn't contain time, rely strictly on latest UTC
+        if self.latest_utc_time.sec == 0 and self.latest_utc_time.nanosec == 0:
+            return # Drop if we haven't received a valid UTC time yet
+
         twist = TwistStamped()
-        twist.header.stamp = timestamp
+        twist.header.stamp = self.latest_utc_time
         twist.header.frame_id = self.frame_id
 
         if not math.isnan(parsed_sentence["speed"]):
@@ -262,23 +244,15 @@ class Ros2NMEADriver(object):
         if self.vel_pub:
             self.vel_pub.publish(twist)
 
-    def handle_pqtmsenmsg(self, parsed_sentence, timestamp):
-        """Handle PQTMSENMSG message - IMU Raw Data
-        
-        Device frame: X=forward, Y=right, Z=DOWN (NED body frame)
-        ROS convention: X=forward, Y=left, Z=UP (FLU body frame for robots)
-        
-        We convert from NED to FLU body frame for ROS compatibility.
-        The orientation quaternion will describe rotation from FLU body to ENU world.
-        """
+    def handle_pqtmsenmsg(self, parsed_sentence):
+        """Handle PQTMSENMSG message - IMU Raw Data"""
         if parsed_sentence is None:
             return
 
-        # Convert from NED body frame to FLU (Forward-Left-Up) body frame for ROS
-        # Device NED:     X=fwd, Y=right, Z=down
-        # ROS FLU:        X=fwd, Y=left,  Z=up
-        # Conversion:     X_flu = X_ned, Y_flu = -Y_ned, Z_flu = -Z_ned
-        
+        # Rely strictly on latest UTC for IMU time (raw IMU has internal ms, converted to absolute UTC)
+        if self.latest_utc_time.sec == 0 and self.latest_utc_time.nanosec == 0:
+            return
+
         accel = Vector3()
         accel.x = parsed_sentence["acc_x_g"] * self.G_TO_MS2      # forward (same)
         accel.y = -parsed_sentence["acc_y_g"] * self.G_TO_MS2     # right -> left (negate)
@@ -297,36 +271,23 @@ class Ros2NMEADriver(object):
         # Publish raw IMU (no orientation)
         if self.imu_data_raw_pub:
             msg = Imu()
-            msg.header.stamp = timestamp
+            msg.header.stamp = self.latest_utc_time
             msg.header.frame_id = self.frame_id
 
             msg.linear_acceleration = self.current_linear_accel
             msg.linear_acceleration_covariance = [
-                0.01,
-                0.0,
-                0.0,
-                0.0,
-                0.01,
-                0.0,
-                0.0,
-                0.0,
-                0.01,
+                0.01, 0.0, 0.0,
+                0.0, 0.01, 0.0,
+                0.0, 0.0, 0.01,
             ]
 
             msg.angular_velocity = self.current_angular_vel
             msg.angular_velocity_covariance = [
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
-                0.0,
-                0.0,
-                0.0,
-                0.000003,
+                0.000003, 0.0, 0.0,
+                0.0, 0.000003, 0.0,
+                0.0, 0.0, 0.000003,
             ]
 
-            # No orientation available in raw message
             msg.orientation.x = 0.0
             msg.orientation.y = 0.0
             msg.orientation.z = 0.0
@@ -337,59 +298,31 @@ class Ros2NMEADriver(object):
 
         # Publish full IMU if we also have orientation
         if self.has_orientation_data and self.imu_data_pub:
-            self.publish_full_imu(timestamp)
+            self.publish_full_imu()
 
-    def handle_pqtmdrpva(self, parsed_sentence, timestamp):
-        """Handle PQTMDRPVA message - INS Data
-        
-        Device frame: X=forward, Y=right, Z=DOWN (NED body frame)
-        Device outputs: Roll (rotation about X), Pitch (rotation about Y), 
-                       Heading (azimuth, 0=North, clockwise positive when viewed from above)
-        
-        We convert to ROS FLU body frame (X=fwd, Y=left, Z=up), then to ENU world frame.
-        """
+    def handle_pqtmdrpva(self, parsed_sentence):
+        """Handle PQTMDRPVA message - INS Data"""
         if parsed_sentence is None:
             return
             
-        print(
-            f"ROLL={parsed_sentence['roll_deg']:.3f} "
-            f"PITCH={parsed_sentence['pitch_deg']:.3f} "
-            f"HEADING={parsed_sentence['heading_deg']:.3f}"
-        )
-        
-        # Device outputs RPY in NED body frame (X=fwd, Y=right, Z=down)
-        # Roll: rotation about X-axis (right side down is positive in NED)
-        # Pitch: rotation about Y-axis (nose up is positive in NED, but negative pitch angle)
-        # Heading: azimuth angle, 0°=North, clockwise positive (90°=East, 180°=South, 270°=West)
-        
-        # Convert from NED body frame angles to FLU body frame angles
-        # In NED: positive roll = right side down, positive pitch = nose up (but reported as negative)
-        # In FLU: positive roll = left side down, positive pitch = nose up
+        utc_time = parsed_sentence["utc_time"]
+        if not math.isnan(utc_time):
+            self.latest_utc_time = self.convert_gps_time_to_ros(utc_time)
+        elif self.latest_utc_time.sec == 0 and self.latest_utc_time.nanosec == 0:
+            return # Cannot proceed without UTC time
+            
         roll_ned = parsed_sentence["roll_deg"] * self.DEG_TO_RAD
         pitch_ned = parsed_sentence["pitch_deg"] * self.DEG_TO_RAD
         heading_rad = parsed_sentence["heading_deg"] * self.DEG_TO_RAD
         
-        # Convert NED body angles to FLU body angles
-        # Roll: NED right-down -> FLU left-down (negate)
-        # Pitch: same sign convention (nose up positive)
         roll_flu = -roll_ned
         pitch_flu = pitch_ned
         
-        # Convert heading (0=North, CW) to ENU yaw (0=East, CCW)
-        # When heading=0° (North), we want yaw=90° (pointing North in ENU is +Y)
-        # When heading=90° (East), we want yaw=0° (pointing East in ENU is +X)
         yaw_enu = (math.pi / 2) - heading_rad
         yaw_enu = (yaw_enu + math.pi) % (2 * math.pi) - math.pi
         
-        print(f"  NED: roll={roll_ned:.4f}, pitch={pitch_ned:.4f}, heading={heading_rad:.4f}")
-        print(f"  FLU->ENU: roll={roll_flu:.4f}, pitch={pitch_flu:.4f}, yaw={yaw_enu:.4f}")
-        
-        # Convert Euler angles (FLU body frame) to quaternion (body to ENU)
         qx, qy, qz, qw = euler_to_quaternion(roll_flu, pitch_flu, yaw_enu)
         
-        print(f"  quat: x={qx:.4f}, y={qy:.4f}, z={qz:.4f}, w={qw:.4f}")
-
-        # Store orientation
         orientation = Quaternion()
         orientation.x = qx
         orientation.y = qy
@@ -399,32 +332,28 @@ class Ros2NMEADriver(object):
         self.current_orientation = orientation
         self.has_orientation_data = True
         
-        print(f"  stored: x={self.current_orientation.x:.4f}, w={self.current_orientation.w:.4f}")
-
-        # Publish velocity from PQTMDRPVA (convert NED to ENU frame)
+        # Publish velocity from PQTMDRPVA
         if self.vel_pub:
             twist = TwistStamped()
-            twist.header.stamp = timestamp
+            twist.header.stamp = self.latest_utc_time
             twist.header.frame_id = self.frame_id
-            # Convert velocities from NED to ENU
-            twist.twist.linear.x = parsed_sentence["vel_east"]   # East (same)
-            twist.twist.linear.y = parsed_sentence["vel_north"]  # North (same)
-            twist.twist.linear.z = -parsed_sentence["vel_down"]  # Down -> Up (negate)
-            # Add angular velocity if available (already converted to FLU in handle_pqtmsenmsg)
+            twist.twist.linear.x = parsed_sentence["vel_east"]   
+            twist.twist.linear.y = parsed_sentence["vel_north"]  
+            twist.twist.linear.z = -parsed_sentence["vel_down"]  
             if self.has_imu_raw_data:
                 twist.twist.angular = self.current_angular_vel
             self.vel_pub.publish(twist)
 
         # Publish full IMU data if available
         if self.has_imu_raw_data and self.imu_data_pub:
-            self.publish_full_imu(timestamp)
+            self.publish_full_imu()
 
         # Publish odometry with ENU coordinates
         if not self.odometry_pub:
             return
         
         odom = Odometry()
-        odom.header.stamp = timestamp
+        odom.header.stamp = self.latest_utc_time
         odom.header.frame_id = "odom"
         odom.child_frame_id = self.frame_id
         
@@ -436,32 +365,21 @@ class Ros2NMEADriver(object):
         alt = parsed_sentence["altitude"]
         sol_type = parsed_sentence["solution_type"]
         
-        # Check if we have valid position data
         if not (math.isnan(lat) or math.isnan(lon) or math.isnan(alt)):
-        
-            # Initialize ENU origin from first RTK fix (solution type 4 or 5)
-            if self.enu_origin_lat is None:
-                # Only set origin if we have RTK fix for accuracy
-                if sol_type in [4, 5]:
-                    self.enu_origin_lat = lat
-                    self.enu_origin_lon = lon
-                    self.enu_origin_alt = alt
-                    print(f"ENU origin set at: {lat:.8f}, {lon:.8f}, {alt:.2f} (RTK)")
+            if self.enu_origin_lat is None and sol_type in [4, 5]:
+                self.enu_origin_lat = lat
+                self.enu_origin_lon = lon
+                self.enu_origin_alt = alt
             
-            # Only compute ENU position if origin is set
             if self.enu_origin_lat is not None:
-                # Convert to ENU coordinates
                 east, north, up = geodetic_to_enu(
                     lat, lon, alt,
                     self.enu_origin_lat, self.enu_origin_lon, self.enu_origin_alt
                 )
-
-                # Set position in ENU coordinates
                 odom.pose.pose.position.x = east
                 odom.pose.pose.position.y = north
                 odom.pose.pose.position.z = up
 
-        # Set position covariance based on solution type
         if sol_type == 4:  # RTK Fixed
             pos_variance = 0.04
         elif sol_type == 5:  # RTK Float
@@ -482,14 +400,10 @@ class Ros2NMEADriver(object):
             0.0, 0.0, 0.0, 0.0, 0.0, 0.017**2,
         ]
 
-        # Set velocity in ENU frame (convert NED velocities to ENU)
-        # Device outputs: vel_north, vel_east, vel_down (NED)
-        # ENU frame needs: vel_east, vel_north, vel_up
-        odom.twist.twist.linear.x = parsed_sentence["vel_east"]   # East (same)
-        odom.twist.twist.linear.y = parsed_sentence["vel_north"]  # North (same)
-        odom.twist.twist.linear.z = -parsed_sentence["vel_down"]  # Down -> Up (negate)
+        odom.twist.twist.linear.x = parsed_sentence["vel_east"]   
+        odom.twist.twist.linear.y = parsed_sentence["vel_north"]  
+        odom.twist.twist.linear.z = -parsed_sentence["vel_down"]  
 
-        # Set angular velocity if available (body frame)
         if self.has_imu_raw_data:
             odom.twist.twist.angular = self.current_angular_vel
         else:
@@ -508,89 +422,74 @@ class Ros2NMEADriver(object):
 
         self.odometry_pub.publish(odom)
 
-    def publish_full_imu(self, timestamp):
+    def publish_full_imu(self):
         """Publish full 9-DOF IMU message with orientation"""
-        if not self.imu_data_pub:
-            return
-        
-        # Only publish if we have both orientation and raw IMU data
-        if not self.has_orientation_data or not self.has_imu_raw_data:
+        if not self.imu_data_pub or not self.has_orientation_data or not self.has_imu_raw_data:
             return
 
         msg = Imu()
-        msg.header.stamp = timestamp
+        msg.header.stamp = self.latest_utc_time
         msg.header.frame_id = self.frame_id
 
-        # Orientation is in ENU frame (from INS)
         msg.orientation = self.current_orientation
         msg.orientation_covariance = [
-            0.0087**2,
-            0.0,
-            0.0,
-            0.0,
-            0.0087**2,
-            0.0,
-            0.0,
-            0.0,
-            0.017**2,
+            0.0087**2, 0.0, 0.0,
+            0.0, 0.0087**2, 0.0,
+            0.0, 0.0, 0.017**2,
         ]
 
-        # Linear acceleration and angular velocity are in body frame
         msg.linear_acceleration = self.current_linear_accel
         msg.linear_acceleration_covariance = [
-            0.01,
-            0.0,
-            0.0,
-            0.0,
-            0.01,
-            0.0,
-            0.0,
-            0.0,
-            0.01,
+            0.01, 0.0, 0.0,
+            0.0, 0.01, 0.0,
+            0.0, 0.0, 0.01,
         ]
 
         msg.angular_velocity = self.current_angular_vel
         msg.angular_velocity_covariance = [
-            0.000003,
-            0.0,
-            0.0,
-            0.0,
-            0.000003,
-            0.0,
-            0.0,
-            0.0,
-            0.000003,
+            0.000003, 0.0, 0.0,
+            0.0, 0.000003, 0.0,
+            0.0, 0.0, 0.000003,
         ]
 
         self.imu_data_pub.publish(msg)
 
-    def add_rtcm_message(self, rtcm_bytes, timestamp=None):
-        """Process RTCM binary message"""
-        if len(rtcm_bytes) < 6:  # Minimum RTCM message size
+    def handle_rtcm(self, rtcm_bytes):
+        """Handle RTCM binary message - validate and publish to topic with GPS epoch time"""
+        if len(rtcm_bytes) < 6 or rtcm_bytes[0] != 0xD3:
             return False
         
-        if rtcm_bytes[0] != 0xD3:
-            return False
+        msg_type = (rtcm_bytes[3] << 4) | (rtcm_bytes[4] >> 4)
+        length = ((rtcm_bytes[1] & 0x03) << 8) | rtcm_bytes[2]
         
-        self.handle_rtcm(rtcm_bytes, timestamp)
+        device_timestamp = None
+        if len(rtcm_bytes) >= 11 and msg_type >= 1071:
+            epoch_time_ms = (
+                ((rtcm_bytes[6] & 0x0F) << 26) |
+                (rtcm_bytes[7] << 18) |
+                (rtcm_bytes[8] << 10) |
+                (rtcm_bytes[9] << 2) |
+                ((rtcm_bytes[10] & 0xC0) >> 6)
+            )
+            gps_seconds = epoch_time_ms / 1000.0
+            device_timestamp = TimeMsg()
+            device_timestamp.sec = int(gps_seconds)
+            device_timestamp.nanosec = int((gps_seconds % 1) * 1e9)
+        
+        # Enforce UTC only: drop or zero-out if RTCM lacks epoch time
+        if self.rtcm_pub:
+            msg = CompressedImage()
+            msg.header.frame_id = self.frame_id
+            msg.header.stamp = device_timestamp if device_timestamp else TimeMsg()
+            msg.format = "rtcm"
+            msg.data = list(rtcm_bytes)
+            self.rtcm_pub.publish(msg)
+        
         return True
-
-    def handle_rtcm(self, rtcm_bytes, timestamp):
-        """Handle RTCM binary message - publish to topic"""
-        # Debug: Print raw bytes and message type
-        if len(rtcm_bytes) >= 6:
-            # Print first 6 bytes in hex
-            hex_str = ' '.join([f'{b:02X}' for b in rtcm_bytes[:6]])
-            
-            # Extract message type
-            msg_type = (rtcm_bytes[3] << 4) | (rtcm_bytes[4] >> 4)
-            length = ((rtcm_bytes[1] & 0x03) << 8) | rtcm_bytes[2]
-            
-            print(f"RTCM: [{hex_str}...] Type={msg_type}, Len={length}, Total={len(rtcm_bytes)} bytes")
-
-        if not self.rtcm_pub:
-            return
-        
-        msg = UInt8MultiArray()
-        msg.data = list(rtcm_bytes)
-        self.rtcm_pub.publish(msg)
+    
+    def convert_gps_time_to_ros(self, utc_time_seconds):
+        """Convert GPS UTC time (seconds since midnight) to ROS timestamp"""
+        timestamp = TimeMsg()
+        timestamp.sec = int(utc_time_seconds)
+        timestamp.nanosec = int((utc_time_seconds % 1) * 1e9)
+        return timestamp

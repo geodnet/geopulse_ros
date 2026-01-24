@@ -118,38 +118,6 @@ def parse_GPGGA(nmea_sentence):
         return None
 
 
-def parse_GPRMC(nmea_sentence):
-    fields = nmea_sentence.split(",")
-
-    if len(fields) < 12:
-        return None
-
-    try:
-        time = convert_time(fields[1])
-        status = convert_status_flag(fields[2])
-        latitude = convert_latitude(fields[3], fields[4])
-        longitude = convert_longitude(fields[5], fields[6])
-
-        speed_knots = safe_float(fields[7])
-        speed_mps = convert_knots_to_mps(speed_knots)
-
-        track = safe_float(fields[8])
-        date_string = fields[9]
-
-        return {
-            "sentence_type": "RMC",
-            "utc_time": time,
-            "fix_valid": status,
-            "latitude": latitude,
-            "longitude": longitude,
-            "speed": speed_mps,
-            "track": track,
-            "date": date_string,
-        }
-    except (ValueError, IndexError):
-        return None
-
-
 def parse_GPVTG(nmea_sentence):
     fields = nmea_sentence.split(",")
 
@@ -195,11 +163,7 @@ def parse_PQTMSENMSG(sentence):
 
 
 def parse_PQTMDRPVA(sentence):
-    """Parse PQTMDRPVA message for INS position, velocity, and attitude
-    
-    Field 5 (latitude) and Field 6 (longitude) are typically in decimal degrees format,
-    not NMEA DDMM.MMMM format. This parser handles both formats.
-    """
+    """Parse PQTMDRPVA message for INS position, velocity, and attitude"""
     fields = sentence.split(",")
 
     if len(fields) < 16:
@@ -208,14 +172,10 @@ def parse_PQTMDRPVA(sentence):
     try:
         last_field = fields[15].split("*")[0] if "*" in fields[15] else fields[15]
 
-        
-        # Parse latitude - check if it's in NMEA format or decimal degrees
         lat_str = fields[5]
         lat_value = safe_float(lat_str)
         
-        # If latitude is > 180, it's likely in DDMM.MMMM format
         if not math.isnan(lat_value) and abs(lat_value) > 180:
-            # Convert from DDMM.MMMM to decimal degrees
             lat_deg = int(lat_value / 100)
             lat_min = lat_value - (lat_deg * 100)
             latitude = lat_deg + (lat_min / 60)
@@ -224,13 +184,10 @@ def parse_PQTMDRPVA(sentence):
         else:
             latitude = lat_value
         
-        # Parse longitude - check if it's in NMEA format or decimal degrees
         lon_str = fields[6]
         lon_value = safe_float(lon_str)
         
-        # If longitude is > 180, it's likely in DDDMM.MMMM format
         if not math.isnan(lon_value) and abs(lon_value) > 180:
-            # Convert from DDDMM.MMMM to decimal degrees
             lon_deg = int(lon_value / 100)
             lon_min = lon_value - (lon_deg * 100)
             longitude = lon_deg + (lon_min / 60)
@@ -275,8 +232,6 @@ def parse_nmea_sentence(nmea_sentence):
 
     if sentence_id.endswith("GGA"):
         return parse_GPGGA(nmea_sentence)
-    elif sentence_id.endswith("RMC"):
-        return parse_GPRMC(nmea_sentence)
     elif sentence_id.endswith("VTG"):
         return parse_GPVTG(nmea_sentence)
     elif sentence_id == "PQTMSENMSG":
