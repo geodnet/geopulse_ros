@@ -8,7 +8,7 @@ import math
 from sensor_msgs.msg import NavSatFix, NavSatStatus, TimeReference, Imu
 from geometry_msgs.msg import TwistStamped, Quaternion, Vector3
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import CompressedImage
+from nmea_driver_msgs.msg import Rtcm
 
 from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
 import libnmea_navsat_driver.parser
@@ -107,7 +107,7 @@ class Ros2NMEADriver(object):
         self.current_fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
 
         # Track the latest UTC time for messages that don't have their own timestamp
-        self.latest_utc_time = TimeMsg()
+        self.latest_utc_time = TimeMsg(sec=0, nanosec=0)
 
         # IMU data - NO DEFAULT VALUES, only set from device
         self.current_linear_accel = None
@@ -460,7 +460,6 @@ class Ros2NMEADriver(object):
             return False
         
         msg_type = (rtcm_bytes[3] << 4) | (rtcm_bytes[4] >> 4)
-        length = ((rtcm_bytes[1] & 0x03) << 8) | rtcm_bytes[2]
         
         device_timestamp = None
         if len(rtcm_bytes) >= 11 and msg_type >= 1071:
@@ -476,13 +475,12 @@ class Ros2NMEADriver(object):
             device_timestamp.sec = int(gps_seconds)
             device_timestamp.nanosec = int((gps_seconds % 1) * 1e9)
         
-        # Enforce UTC only: drop or zero-out if RTCM lacks epoch time
         if self.rtcm_pub:
-            msg = CompressedImage()
+            # UPDATED: Use Rtcm custom message
+            msg = Rtcm()
             msg.header.frame_id = self.frame_id
             msg.header.stamp = device_timestamp if device_timestamp else TimeMsg()
-            msg.format = "rtcm"
-            msg.data = list(rtcm_bytes)
+            msg.data = list(rtcm_bytes)  # Convert bytes to list for uint8[] field
             self.rtcm_pub.publish(msg)
         
         return True

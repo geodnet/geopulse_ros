@@ -23,6 +23,7 @@
     <exec_depend>python3-numpy</exec_depend>
     <exec_depend>python3-serial</exec_depend>
     <exec_depend>tf_transformations</exec_depend>
+    <exec_depend>nmea_driver_msgs</exec_depend>
 
     <test_depend>python3-pytest</test_depend>
 
