@@ -9,8 +9,13 @@ __pycache__/
 *.pyo
 *.egg-info/
 *.egg
+.Python
+dist/
+bin/
+include/
+lib/
 
-# IDE
+# IDE / Editor
 .vscode/
 .idea/
 *.swp
