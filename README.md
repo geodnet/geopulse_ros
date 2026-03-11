@@ -1,6 +1,6 @@
-# Geodnet ROS2 NMEA NavSat Driver
+# Geodnet ROS2 Geopulse Driver
 
-A ROS2 driver for parsing NMEA sentences from GNSS/GPS devices and publishing standard ROS navigation messages. This package is specifically enhanced for Geodnet devices with integrated IMU support.
+A ROS2 driver for parsing NMEA sentences from Geodnet GNSS/GPS devices and publishing standard ROS navigation messages. This package is specifically enhanced for Geodnet devices with integrated IMU support.
 
 ## Overview
 
