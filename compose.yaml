@@ -12,11 +12,11 @@ services:
     command: ros2 launch nmea_navsat_driver nmea_serial_driver.launch.py
     privileged: true
     devices:
-      - "${SERIAL_DEVICE:-/dev/ttyUSB1}:/dev/ttyUSB1"
+      - "${SERIAL_DEVICE:-/dev/ttyACM2}:/dev/ttyACM2"
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - NMEA_BAUD=${NMEA_BAUD:-115200}
-      - NMEA_PORT=${NMEA_PORT:-/dev/ttyUSB1}
+      - NMEA_PORT=${NMEA_PORT:-/dev/ttyACM2}
       - NMEA_FRAME_ID=${NMEA_FRAME_ID:-gps}
     network_mode: host
     restart: unless-stopped
