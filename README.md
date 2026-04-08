@@ -1,85 +1,175 @@
 # Geodnet ROS2 Geopulse Driver
 
-A ROS2 driver for parsing NMEA sentences from Geodnet GNSS/GPS devices and publishing standard ROS navigation messages. This package is specifically enhanced for Geodnet devices with integrated IMU support.
+A ROS2 driver for parsing NMEA sentences from Geodnet GNSS/GPS devices, publishing standard ROS navigation messages with extended support for Quectel IMU data. Does not require the GPSD daemon.
 
-## Overview
+## Table of Contents
 
-This driver parses NMEA strings from GPS/GNSS devices and publishes ROS2 messages without requiring the GPSD daemon. It includes extended support for proprietary Quectel NMEA sentences used by Geodnet devices.
+- [Device Requirements](#device-requirements)
+- [Features](#features)
+- [Published Topics](#published-topics)
+- [Windows / WSL Setup](#windows--wsl-setup)
+- [Quick Start — Docker](#quick-start--docker)
+- [Quick Start — Native](#quick-start--native)
+- [Configuration](#configuration)
+- [RViz Visualization](#rviz-visualization)
+- [Troubleshooting](#troubleshooting)
+- [Recording & Playback](#recording--playback)
+- [Attribution](#attribution)
 
-## Features
+---
 
-- Standard NMEA sentence parsing (GGA, RMC, VTG)
+## Device Requirements
+
+This driver requires the GEOPULSE device to be running **firmware version 3.6.0 or later**. Older firmware versions may not output the required NMEA sentences.
+
+### Firmware Upgrade Procedure
+
+1. Plug the GEOPULSE device into your PC or laptop via USB.
+2. Open a serial terminal (e.g. RealTerm, PuTTY, or similar).
+3. Configure WiFi on the device by sending:
+   ```
+   +HYFIX,WIFI,"wifiname","wifipassword"#
+   ```
+   Replace `wifiname` and `wifipassword` with your network credentials.
+4. Send the upgrade command to start the firmware update.
+5. Wait for the device to complete the upgrade and reboot.
+
+After the upgrade completes, reconnect the device before continuing.
+
+---
+
+
+
+- Standard NMEA sentence parsing: `GGA`, `RMC`, `VTG`
 - Proprietary Quectel sentence support:
-  - `PQTMSENMSG` - Raw IMU data (accelerometer + gyroscope)
-  - `PQTMDRPVA` - INS position, velocity, and attitude
+  - `PQTMSENMSG` — Raw IMU data (accelerometer + gyroscope)
+  - `PQTMDRPVA` — INS position, velocity, and attitude
 - Serial port connection
-- Publishes standard ROS2 message types:
-  - `sensor_msgs/NavSatFix` - GPS fix data
-  - `sensor_msgs/Imu` - IMU data (raw and fused)
-  - `geometry_msgs/TwistStamped` - Velocity
-  - `nav_msgs/Odometry` - Full odometry from INS
+- Publishes standard ROS2 message types (see [Published Topics](#published-topics))
 
-## Quick Start (Docker)
+---
 
-The easiest way to run the driver is with Docker.
+## Published Topics
 
-### Build
+| Topic | Type | Description |
+|---|---|---|
+| `/fix` | `sensor_msgs/NavSatFix` | GPS fix with position and covariance |
+| `/vel` | `geometry_msgs/TwistStamped` | Velocity from GPS/INS |
+| `/time_reference` | `sensor_msgs/TimeReference` | GPS time reference |
+| `/imu/data` | `sensor_msgs/Imu` | Fused IMU data with orientation |
+| `/imu/data_raw` | `sensor_msgs/Imu` | Raw IMU data (accel + gyro only) |
+| `/odometry/ins` | `nav_msgs/Odometry` | Full INS odometry |
+
+---
+
+## Windows / WSL Setup
+
+If you are on Windows, we recommend running the driver inside Ubuntu via WSL2. This gives you the Linux environment that ROS2 requires while staying on Windows.
+
+**Requirements:**
+- Ubuntu via WSL2
+- Docker Desktop with WSL integration enabled
+
+**Before starting:** make sure the GEOPULSE USB device is visible inside WSL. You can verify this by checking that `/dev/ttyUSB0` (or similar) appears after plugging in the device.
+
+### Accessing ROS Topics Inside Docker (WSL)
+
+When running via Docker, ROS2 commands must be run inside the container. From your WSL terminal:
+
+```bash
+cd ~/ros2_ws/src/geopulse_ros
+docker compose exec nmea-driver bash
+```
+
+Then inside the container:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /ros2_ws/install/setup.bash
+ros2 topic list
+```
+
+---
+
+## Quick Start — Docker
+
+### 1. Clone the repo into a ROS2 workspace
+
+```bash
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws/src
+git clone <this-repo-url>
+cd ~/ros2_ws
+```
+
+### 2. Build the Docker image
+
 ```bash
 ./build.sh
 ```
 
-Or specify a ROS distro:
+To target a specific ROS distro:
+
 ```bash
 ROS_DISTRO=jazzy ./build.sh
 ```
 
-### Run
+### 3. Run
+
 ```bash
 docker compose up
 ```
 
-Override the serial device if needed:
+If your device is not at `/dev/ttyUSB0`, override it:
+
 ```bash
 SERIAL_DEVICE=/dev/ttyACM0 docker compose up
 ```
 
-## Native Installation
+---
+
+## Quick Start — Native
 
 ### Prerequisites
 
-- ROS2 (Humble or later recommended)
+- ROS2 Humble or later
 - Python 3
-- Required ROS2 packages:
-  - `geometry_msgs`
-  - `sensor_msgs`
-  - `nav_msgs`
-  - `nmea_msgs`
-  - `rclpy`
-  - `tf_transformations`
+- ROS2 packages: `geometry_msgs`, `sensor_msgs`, `nav_msgs`, `nmea_msgs`, `rclpy`, `tf_transformations`
 
-### Build
+### 1. Clone into your ROS2 workspace
+
 ```bash
-# Clone into your ROS2 workspace
+mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 git clone <this-repo-url>
+```
 
-# Install dependencies
+### 2. Install dependencies
+
+```bash
 cd ~/ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
+```
 
-# Build
+### 3. Build and source
+
+```bash
 colcon build --packages-select nmea_navsat_driver
 source install/setup.bash
 ```
 
-### Run
+### 4. Launch
+
 ```bash
 ros2 launch nmea_navsat_driver nmea_serial_driver.launch.py
 ```
 
+---
+
 ## Configuration
 
-Edit `config/nmea_serial_driver.yaml`:
+Edit `config/nmea_serial_driver.yaml` to match your device:
+
 ```yaml
 nmea_navsat_driver:
   ros__parameters:
@@ -90,48 +180,19 @@ nmea_navsat_driver:
     useRMC: False
 ```
 
-## Published Topics
+---
 
-| Topic             | Message Type                  | Description                        |
-| ----------------- | ----------------------------- | ---------------------------------- |
-| `/fix`            | `sensor_msgs/NavSatFix`       | GPS fix with position and covariance |
-| `/vel`            | `geometry_msgs/TwistStamped`  | Velocity from GPS/INS              |
-| `/time_reference` | `sensor_msgs/TimeReference`   | GPS time reference                 |
-| `/imu/data`       | `sensor_msgs/Imu`             | Fused IMU data with orientation    |
-| `/imu/data_raw`   | `sensor_msgs/Imu`             | Raw IMU data (accel + gyro only)   |
-| `/odometry/ins`   | `nav_msgs/Odometry`           | Full INS odometry                  |
+## RViz Visualization
 
-## Supported NMEA Sentences
+Visualize your device's real-time position and orientation. Requires a Quectel LC29H (or similar) with DR/INS enabled and outputting `PQTMDRPVA` messages.
 
-### Standard Sentences
+### Step 1 — Start all nodes
 
-- `GGA` - GPS Fix Data
-- `RMC` - Recommended Minimum Navigation Information
-- `VTG` - Track Made Good and Ground Speed
+You'll need 4 terminals. Open them all before starting RViz.
 
-### Proprietary Sentences (Geodnet/Quectel)
-
-- `PQTMSENMSG` - IMU sensor message (accelerometer, gyroscope, temperature)
-- `PQTMDRPVA` - Dead reckoning position, velocity, and attitude
-
-## RViz Visualization Guide
-
-This guide shows you how to visualize your GNSS/INS device's position and orientation in real-time using RViz2.
-
-### Prerequisites for Visualization
-
-- ROS 2 (Humble or later)
-- nmea_navsat_driver package installed and built
-- GNSS/INS device connected via USB (e.g., Quectel LC29H with DR/INS)
-- Device calibrated and outputting PQTMDRPVA messages with orientation data
-
-### Step 1: Start All Nodes
-
-Open 4 terminals and run these commands:
-
-**Terminal 1 - NMEA Driver:**
+**Terminal 1 — NMEA driver:**
 ```bash
-cd ~/geodnet_ros
+cd ~/ros2_ws
 source install/setup.bash
 ros2 run nmea_navsat_driver nmea_serial_driver --ros-args \
   -p port:=/dev/ttyUSB0 \
@@ -139,368 +200,214 @@ ros2 run nmea_navsat_driver nmea_serial_driver --ros-args \
   -p frame_id:=base_link
 ```
 
-**Terminal 2 - Odometry TF Broadcaster:**
+**Terminal 2 — Odometry TF broadcaster:**
 ```bash
-cd ~/geodnet_ros
+cd ~/ros2_ws
 source install/setup.bash
 ros2 run nmea_navsat_driver odom_tf_broadcaster
 ```
 
-**Terminal 3 - Static TF (map→odom):**
+**Terminal 3 — Static TF (map → odom):**
 ```bash
 ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom
 ```
 
-**Terminal 4 - RViz:**
+**Terminal 4 — RViz:**
 ```bash
 ros2 run rviz2 rviz2
 ```
 
-### Step 2: Configure RViz
+### Step 2 — Configure RViz
 
-When RViz opens, configure the following displays:
+Once RViz is open, configure it as follows:
 
-#### 1. Set Fixed Frame
+**Fixed Frame**
 
-- Top left dropdown labeled **"Fixed Frame"**
-- Change from `map` to **`odom`**
+- Top-left dropdown → change `map` to `odom`
 
-#### 2. Add TF Display
+**Add TF display**
 
-- Click **"Add"** button (bottom left)
-- Select **"TF"** from the list
-- Click **"OK"**
-- You should see frame connections: `map` → `odom` → `base_link`
+- Click **Add** → select **TF** → click **OK**
+- You should see: `map` → `odom` → `base_link`
 
-#### 3. Add Axes Display
+**Add Axes display**
 
-- Click **"Add"** button
-- Select **"Axes"** from the list
-- Click **"OK"**
-- In the left panel under **Axes** properties, set:
-  - **Reference Frame**: `base_link`
-  - **Length**: `2.0`
-  - **Radius**: `0.3`
+- Click **Add** → select **Axes** → click **OK**
+- Set properties: Reference Frame: `base_link` | Length: `2.0` | Radius: `0.3`
 
-#### 4. Add Grid
+**Add Grid display**
 
-- Click **"Add"** button
-- Select **"Grid"** from the list
-- Click **"OK"**
-- In properties:
-  - **Reference Frame**: `odom`
-  - **Plane Cell Count**: `20`
-  - **Cell Size**: `1`
+- Click **Add** → select **Grid** → click **OK**
+- Set properties: Reference Frame: `odom` | Cell Count: `20` | Cell Size: `1`
 
-#### 5. Add Odometry Display (Optional)
+**Add Odometry display (optional)**
 
-- Click **"Add"** button
-- Select **"Odometry"** from the list
-- Click **"OK"**
-- In properties:
-  - **Topic**: `/odometry/ins`
-  - **Shape**: `Arrow`
-  - **Arrow Length**: `2.0`
-  - **Color**: Red or your preference
+- Click **Add** → select **Odometry** → click **OK**
+- Set properties: Topic: `/odometry/ins` | Shape: `Arrow` | Arrow Length: `2.0`
 
-#### 6. Set Camera View
+**Camera view**
 
-- Right panel → **Views** section
-- **Type**: Select **"Orbit"**
-- **Target Frame**: `base_link`
-- **Distance**: `10`
-- **Yaw**: `0`
-- **Pitch**: `0.785` (45 degrees)
+- Right panel → **Views** → Type: **Orbit**
+- Target Frame: `base_link` | Distance: `10` | Yaw: `0` | Pitch: `0.785` (45°)
 
-### Step 3: Verify Everything is Working
+### Step 3 — Verify
 
-**Terminal 5 - Check TF Broadcast Rate:**
+In a new terminal, confirm everything is publishing:
+
 ```bash
+# TF should show ~10 Hz
 ros2 topic hz /tf
-# Should show ~10 Hz
-```
 
-**Terminal 6 - Check Orientation Updates:**
-```bash
+# Tilt the device — these values should change
 ros2 topic echo /odometry/ins --field pose.pose.orientation
 ```
 
-**Tilt your device** - the quaternion values should change in real-time!
+### Step 4 — Test movement
 
-### Step 4: Test Movement
+| Action | Expected result |
+|---|---|
+| Tilt forward | Green (Y) axis tilts forward, Red (X) tilts up |
+| Tilt left | Red (X) axis tilts left, Blue (Z) rotates |
+| Rotate (yaw) | Axes spin around Blue (Z) axis |
+| Walk 10 m | Axes translate across the grid |
 
-With RViz visible and configured, test the following:
+### Coordinate frames
 
-#### Tilt Device Forward (Pitch):
-
-- **Expected**: Green (Y) axis tilts forward, Red (X) axis tilts up
-- **What it shows**: Device pitch angle
-
-#### Tilt Device Left (Roll):
-
-- **Expected**: Red (X) axis tilts left, Blue (Z) axis rotates
-- **What it shows**: Device roll angle
-
-#### Rotate Device (Yaw/Heading):
-
-- **Expected**: Axes spin around Blue (Z) axis
-- **What it shows**: Device heading/compass direction
-
-#### Walk 10 Meters:
-
-- **Expected**: Axes translate across the grid
-- **What it shows**: Device position in ENU coordinates
-
-### Expected Visualization
-
-You should see 3 colored arrows (axes) representing your device orientation:
-
-- **Red arrow (X axis)** - Points forward (device front)
-- **Green arrow (Y axis)** - Points left (device left side)
-- **Blue arrow (Z axis)** - Points up (device top)
-
-These axes should:
-
-- ✅ Rotate in real-time as you tilt/spin the device
-- ✅ Move across the grid as you walk
-- ✅ Update smoothly at ~10 Hz
-- ✅ Follow your exact device movements with minimal lag
-
-### Coordinate Frames
 ```
 map (static world frame)
- └─ odom (local navigation frame, ENU coordinates)
-     └─ base_link (device/sensor frame)
+ └─ odom (local ENU frame, origin = first GPS fix)
+     └─ base_link (device frame, moves with sensor)
 ```
 
-- **map**: Global reference frame (static)
-- **odom**: Odometry frame with origin at first GPS position
-- **base_link**: Device frame that moves and rotates with your sensor
+The grid uses East-North-Up (ENU) coordinates:
+- **X (Red)** → East
+- **Y (Green)** → North
+- **Z (Blue)** → Up
+- **Origin (0,0,0)** → your device's first GPS position
 
-### Understanding the Grid
+### Save and reload RViz config
 
-The grid represents the local East-North-Up (ENU) coordinate system:
+```bash
+# Save: File → Save Config As...
+# Suggested path:
+~/ros2_ws/src/nmea_navsat_driver/config/ins_visualization.rviz
 
-- **X axis (Red)**: Points East
-- **Y axis (Green)**: Points North
-- **Z axis (Blue)**: Points Up
-- **Origin (0,0,0)**: Your device's first GPS position
+# Reload later:
+ros2 run rviz2 rviz2 -d ~/ros2_ws/src/nmea_navsat_driver/config/ins_visualization.rviz
+```
 
-As you move:
-
-- Moving **East** increases X coordinate
-- Moving **North** increases Y coordinate
-- Moving **Up** (altitude) increases Z coordinate
+---
 
 ## Troubleshooting
 
 ### No axes visible in RViz
 
-**Check:**
+Make sure all 4 terminals are running.
+
 ```bash
-# Verify nodes are running
 ros2 node list
-# Should show: /nmea_serial_driver, /odom_tf_broadcaster, /static_tf_map_odom, /rviz2
+# Expected: /nmea_serial_driver, /odom_tf_broadcaster, /static_tf_map_odom, /rviz2
 
-# Verify TF is being published
 ros2 topic list | grep tf
-# Should show: /tf, /tf_static
+# Expected: /tf, /tf_static
 ```
 
-**Solution:** Make sure all 4 terminals are running (driver, odom_tf_broadcaster, static_tf, rviz)
+### Axes don't move
 
-### Axes don't move when device moves
-
-**Check:**
 ```bash
-# Verify odometry is publishing
-ros2 topic hz /odometry/ins
-# Should show ~10 Hz
-
-# Verify orientation changes
-ros2 topic echo /odometry/ins --field pose.pose.orientation
-# Tilt device - values should change
+ros2 topic hz /odometry/ins         # Should show ~10 Hz
+ros2 topic echo /fix --field status # Check for GPS lock
 ```
 
-**Solution:**
-
-- Ensure device has GPS lock (check `/fix` topic)
-- Verify PQTMDRPVA messages have non-zero roll/pitch/heading
-- Check that device INS/DR mode is enabled and calibrated
+Ensure the device has GPS lock and INS/DR mode is enabled and calibrated.
 
 ### TF errors in RViz
 
-**Check:**
 ```bash
-# View TF tree
-ros2 run tf2_tools view_frames
-# Opens frames.pdf showing frame hierarchy
-
-# Check specific transform
-ros2 run tf2_ros tf2_echo odom base_link
-# Should show updating transform
+ros2 run tf2_tools view_frames      # Opens frames.pdf showing TF tree
+ros2 run tf2_ros tf2_echo odom base_link  # Should show a live transform
 ```
 
-**Solution:** Ensure `odom_tf_broadcaster` is running and `/odometry/ins` is publishing
+Make sure `odom_tf_broadcaster` is running and `/odometry/ins` is publishing.
 
 ### Axes orientation seems wrong
 
-**Check heading convention:** Your device outputs heading as clockwise from North. The driver converts this to ROS ENU convention (counter-clockwise from East).
-
-**Test:**
+The driver converts the device's clockwise-from-North heading to the ROS ENU convention (counter-clockwise from East). To verify:
 
 - Face North → Red arrow should point North
 - Face East → Red arrow should point East
-- Face South → Red arrow should point South
 
-If axes are rotated incorrectly, check the yaw conversion in `driver.py`.
+If wrong, check the yaw conversion in `driver.py`.
 
-### Position doesn't match GPS location
+### Position doesn't match GPS lat/lon
 
-**Note:** The visualization uses **relative coordinates** (ENU), not absolute GPS coordinates. The origin (0,0,0) is set at your device's first GPS position.
+This is expected. The visualization uses **relative ENU coordinates** — not absolute GPS coordinates. The origin is your first GPS fix. Walking 10 m East should show position change from `(0,0,0)` to approximately `(10,0,0)`.
 
-**This is normal:** If you walk 10 meters East, you should see position change from (0,0,0) to (~10,0,0), not your GPS lat/lon.
-
-## Advanced Configuration
-
-### Save RViz Configuration
-
-Once you have RViz configured:
-
-1. **File** → **Save Config As...**
-2. Save to: `~/geodnet_ros/src/nmea_navsat_driver/config/ins_visualization.rviz`
-
-### Load Saved Configuration
-```bash
-ros2 run rviz2 rviz2 -d ~/geodnet_ros/src/nmea_navsat_driver/config/ins_visualization.rviz
-```
-
-### Change Camera View
-
-For different perspectives:
-
-**Top-down view:**
-
-- Views → Orbit
-- Pitch: `1.57` (90 degrees)
-- Yaw: `0`
-
-**Follow device:**
-
-- Views → ThirdPersonFollower
-- Target Frame: `base_link`
-- Distance: `5-10`
-
-**Side view:**
-
-- Views → Orbit
-- Pitch: `0`
-- Yaw: `1.57` (90 degrees)
+---
 
 ## Monitoring Performance
 
-### Check Message Rates
 ```bash
-# Odometry rate
+# Message rates
 ros2 topic hz /odometry/ins
-
-# TF rate
 ros2 topic hz /tf
-
-# IMU rate (if enabled)
 ros2 topic hz /imu/data
+
+# Data quality
+ros2 topic echo /fix --field status              # GPS fix status
+ros2 topic echo /odometry/ins --field pose.covariance  # Position accuracy
 ```
 
-### Check Data Quality
-```bash
-# GPS fix status
-ros2 topic echo /fix --field status
+---
 
-# Position covariance (accuracy)
-ros2 topic echo /odometry/ins --field pose.covariance
+## Recording & Playback
 
-# Solution type (from PQTMDRPVA)
-ros2 topic echo /odometry/ins --once | grep solution
-```
-
-## Tips for Best Results
-
-1. **Ensure good GPS signal** - Stand outside with clear sky view
-2. **Calibrate INS before use** - Walk in figure-8 pattern, tilt device in various orientations
-3. **Keep device level** when setting origin - First position becomes (0,0,0)
-4. **Move smoothly** - Sudden jerky movements may cause temporary errors
-5. **Wait for GPS lock** - Solution type should be 1 or higher (4=RTK Fixed is best)
-
-## Recording and Playback
-
-### Record a session
 ```bash
 # Record all topics
 ros2 bag record -a
 
 # Or record specific topics
 ros2 bag record /odometry/ins /imu/data /fix /tf /tf_static
-```
 
-### Playback
-```bash
-# Play back recorded data
+# Playback
 ros2 bag play <bag_file_name>
-
-# Then open RViz to visualize
-ros2 run rviz2 rviz2 -d ~/geodnet_ros/src/nmea_navsat_driver/config/ins_visualization.rviz
+ros2 run rviz2 rviz2 -d ~/ros2_ws/src/nmea_navsat_driver/config/ins_visualization.rviz
 ```
 
-## Additional Displays
+---
 
-### Add Path Display
+## Tips for Best Results
 
-Shows the trajectory your device has traveled:
+1. **Get good GPS signal** — stand outside with a clear sky view
+2. **Calibrate INS before use** — walk in a figure-8 pattern and tilt the device in various orientations
+3. **Keep device level at startup** — the first position becomes the origin
+4. **Wait for GPS lock** — solution type should be ≥ 1; RTK Fixed (type 4) is best
+5. **Move smoothly** — sudden jerky movements can cause temporary errors
 
-1. Click **"Add"** → **"Path"**
-2. Topic: `/path` (requires path publisher node)
-3. Color: Green
-4. Line Width: `0.05`
+---
 
-### Add IMU Display (requires plugin)
+## Additional RViz Displays
+
+**Path (trajectory trail):**
+- Add → **Path** | Topic: `/path` | Color: Green | Line Width: `0.05`
+- Requires a separate path publisher node
+
+**IMU visualization:**
 ```bash
-# Install IMU plugin
 sudo apt install ros-${ROS_DISTRO}-rviz-imu-plugin
-
-# In RViz: Add → rviz_imu_plugin → Imu
-# Topic: /imu/data
+# In RViz: Add → rviz_imu_plugin → Imu | Topic: /imu/data
 ```
 
-### Add Marker Array
-
-For waypoints or custom markers (requires publishing marker messages)
+---
 
 ## Attribution
 
-This package is based on the [nmea_navsat_driver](https://github.com/ros-drivers/nmea_navsat_driver) ROS2 package.
+Based on the [nmea_navsat_driver](https://github.com/ros-drivers/nmea_navsat_driver) ROS2 package.
+Copyright (c) 2013, Eric Perko. Licensed under the BSD License.
 
-### License
-
-BSD License - See the original package for full license terms.
-
-The original `nmea_navsat_driver` package is Copyright (c) 2013, Eric Perko. All rights reserved.
-
-## Links
-
-- [Original ROS Wiki](http://ros.org/wiki/nmea_navsat_driver)
+**Links:**
+- [ROS Wiki](http://ros.org/wiki/nmea_navsat_driver)
 - [Original GitHub](https://github.com/ros-drivers/nmea_navsat_driver)
-- [ROS 2 TF2 Documentation](https://docs.ros.org/en/humble/Tutorials/Intermediate/Tf2/Tf2-Main.html)
-- [RViz User Guide](https://github.com/ros2/rviz)
-- [nav_msgs/Odometry Message](https://docs.ros2.org/latest/api/nav_msgs/msg/Odometry.html)
-- [sensor_msgs/Imu Message](https://docs.ros2.org/latest/api/sensor_msgs/msg/Imu.html)
-
-## Support
-
-If you encounter issues:
-
-1. Check all nodes are running: `ros2 node list`
-2. Verify topics are publishing: `ros2 topic list`
-3. Check TF tree: `ros2 run tf2_tools view_frames`
-4. Enable debug logging: `--log-level debug`
-
-For device-specific issues (GPS lock, INS calibration), refer to your Quectel device documentation.
+- [ROS2 TF2 docs](https://docs.ros.org/en/humble/Tutorials/Intermediate/Tf2/Tf2-Main.html)
+- [nav_msgs/Odometry](https://docs.ros2.org/latest/api/nav_msgs/msg/Odometry.html)
+- [sensor_msgs/Imu](https://docs.ros2.org/latest/api/sensor_msgs/msg/Imu.html)
