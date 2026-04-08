@@ -36,7 +36,7 @@ COPY src/ src/
 
 # Build the workspace
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
-    && colcon build --packages-select nmea_navsat_driver
+    && colcon build --packages-up-to nmea_navsat_driver
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime

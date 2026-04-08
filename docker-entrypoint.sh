@@ -8,4 +8,7 @@ if [ -z "${ROS_DISTRO:-}" ]; then
     exit 1
 fi
 
+source /opt/ros/${ROS_DISTRO}/setup.bash
+source /ros2_ws/install/setup.bash
+
 exec "$@"
