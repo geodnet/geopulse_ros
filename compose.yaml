@@ -5,18 +5,19 @@
 #   docker compose up
 #   SERIAL_DEVICE=/dev/ttyACM0 NMEA_BAUD=9600 docker compose up
 # =============================================================================
-
 services:
   nmea-driver:
     image: geodnet-nmea-driver:latest
     command: ros2 launch nmea_navsat_driver nmea_serial_driver.launch.py
     privileged: true
     devices:
-      - "${SERIAL_DEVICE:-/dev/ttyACM2}:/dev/ttyACM2"
+      - "${SERIAL_DEVICE:-/dev/ttyACM1}:/dev/ttyACM1"
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - NMEA_BAUD=${NMEA_BAUD:-115200}
-      - NMEA_PORT=${NMEA_PORT:-/dev/ttyACM2}
+      - NMEA_PORT=${NMEA_PORT:-/dev/ttyACM1}
       - NMEA_FRAME_ID=${NMEA_FRAME_ID:-gps}
     network_mode: host
     restart: unless-stopped
+    volumes:
+      - ${BAG_OUTPUT_DIR:-./bags}:/bags
