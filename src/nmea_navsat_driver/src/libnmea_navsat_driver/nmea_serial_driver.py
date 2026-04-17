@@ -16,6 +16,7 @@ from libnmea_navsat_driver.driver import Ros2NMEADriver
 from sensor_msgs.msg import NavSatFix, NavSatStatus, TimeReference, Imu
 from geometry_msgs.msg import TwistStamped
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Int8
 
 # UPDATED: Import the custom message from THIS package
 from nmea_driver_msgs.msg import Rtcm
@@ -49,6 +50,8 @@ class NMEASerialNode(Node):
         
         # UPDATED: Publisher uses custom Rtcm message
         self.driver.rtcm_pub = self.create_publisher(Rtcm, "rtcm", 10)
+
+        self.driver.nmea_status_pub = self.create_publisher(Int8, "nmea_fix_status", 10)
 
         try:
             self.serial_port = serial.Serial(port=port, baudrate=baud, timeout=0.1)

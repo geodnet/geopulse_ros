@@ -14,6 +14,7 @@ from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
 import libnmea_navsat_driver.parser
 
 from builtin_interfaces.msg import Time as TimeMsg
+from std_msgs.msg import Int8
 
 
 def euler_to_quaternion(roll, pitch, yaw):
@@ -101,6 +102,7 @@ class Ros2NMEADriver(object):
         self.imu_data_raw_pub = None
         self.odometry_pub = None
         self.rtcm_pub = None
+        self.nmea_status_pub = None
 
         self.current_fix = NavSatFix()
         self.current_fix.header.frame_id = self.frame_id
@@ -197,6 +199,11 @@ class Ros2NMEADriver(object):
             self.current_fix.status.status = NavSatStatus.STATUS_FIX
 
         self.current_fix.status.service = NavSatStatus.SERVICE_GPS
+
+        if self.nmea_status_pub:
+            raw_status_msg = Int8()
+            raw_status_msg.data = fix_quality
+            self.nmea_status_pub.publish(raw_status_msg)
 
         hdop = parsed_sentence["hdop"]
         if not math.isnan(hdop):
