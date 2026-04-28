@@ -17,6 +17,11 @@ services:
       - NMEA_BAUD=${NMEA_BAUD:-115200}
       - NMEA_PORT=${NMEA_PORT:-/dev/ttyACM1}
       - NMEA_FRAME_ID=${NMEA_FRAME_ID:-gps}
+      - NTRIP_HOST=rtk.geodnet.com
+      - NTRIP_PORT=2101
+      - NTRIP_MOUNTPOINT=AUTO
+      - NTRIP_USERNAME=nithya #replace NTRIP username if required
+      - NTRIP_PASSWORD=123456 #replace NTRIP password if required
     network_mode: host
     restart: unless-stopped
     volumes:
