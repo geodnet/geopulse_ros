@@ -32,12 +32,25 @@ def generate_launch_description():
 
     # Allow environment variable overrides
     param_overrides = {}
+
     if os.environ.get("NMEA_BAUD"):
         param_overrides["baud"] = int(os.environ["NMEA_BAUD"])
     if os.environ.get("NMEA_PORT"):
         param_overrides["port"] = os.environ["NMEA_PORT"]
     if os.environ.get("NMEA_FRAME_ID"):
         param_overrides["frame_id"] = os.environ["NMEA_FRAME_ID"]
+
+    # NTRIP overrides
+    if os.environ.get("NTRIP_HOST"):
+        param_overrides["ntrip_host"] = os.environ["NTRIP_HOST"]
+    if os.environ.get("NTRIP_PORT"):
+        param_overrides["ntrip_port"] = int(os.environ["NTRIP_PORT"])
+    if os.environ.get("NTRIP_MOUNTPOINT"):
+        param_overrides["ntrip_mountpoint"] = os.environ["NTRIP_MOUNTPOINT"]
+    if os.environ.get("NTRIP_USERNAME"):
+        param_overrides["ntrip_username"] = os.environ["NTRIP_USERNAME"]
+    if os.environ.get("NTRIP_PASSWORD"):
+        param_overrides["ntrip_password"] = os.environ["NTRIP_PASSWORD"]
 
     driver_node = actions.Node(
         package="nmea_navsat_driver",
