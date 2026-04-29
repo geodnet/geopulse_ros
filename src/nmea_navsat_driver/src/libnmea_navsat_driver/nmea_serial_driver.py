@@ -83,6 +83,7 @@ class NMEASerialNode(Node):
                 password=ntrip_password,
                 serial_port=self.serial_port,
                 logger=self.get_logger(),
+                rtcm_callback=self.driver.handle_rtcm,
             )
             self.ntrip_client.start()
             self.get_logger().info(

@@ -23,7 +23,7 @@ class NtripClient:
     BUFFER_SIZE = 4096
     RECONNECT_DELAY = 5.0  # seconds between reconnect attempts
 
-    def __init__(self, host, port, mountpoint, username, password, serial_port, logger=None):
+    def __init__(self, host, port, mountpoint, username, password, serial_port, logger=None, rtcm_callback=None):
         self.host = host
         self.port = port
         self.mountpoint = mountpoint
@@ -36,6 +36,7 @@ class NtripClient:
         self._stop_event = threading.Event()
         self._bytes_received = 0
         self._connected = False
+        self.rtcm_callback = rtcm_callback
 
     def start(self):
         """Start the NTRIP client in a background thread."""
@@ -145,11 +146,14 @@ class NtripClient:
             self._stop_event.wait(self.RECONNECT_DELAY)
 
     def _write_to_serial(self, data):
-        """Write RTCM bytes to the serial port."""
+        """Write RTCM bytes to the serial port and publish to ROS topic."""
         try:
             if self.serial_port and self.serial_port.is_open:
                 self.serial_port.write(data)
                 self._bytes_received += len(data)
                 self.logger.debug(f"Injected {len(data)} RTCM bytes to device")
+                # Publish to ROS topic if callback is set
+                if self.rtcm_callback:
+                    self.rtcm_callback(data)
         except Exception as e:
             self.logger.error(f"Failed to write RTCM to serial port: {e}")
