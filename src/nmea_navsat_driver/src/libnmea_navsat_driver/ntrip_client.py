@@ -32,35 +32,35 @@ class NtripClient:
         self.serial_port = serial_port  # serial.Serial instance shared with driver
         self.logger = logger or logging.getLogger(__name__)
 
-        self._thread = None
-        self._stop_event = threading.Event()
-        self._bytes_received = 0
-        self._connected = False
+        self.thread = None
+        self.stop_event = threading.Event()
+        self.bytes_received = 0
+        self.connected = False
         self.rtcm_callback = rtcm_callback
 
     def start(self):
         """Start the NTRIP client in a background thread."""
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="ntrip_client")
-        self._thread.start()
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self.run, daemon=True, name="ntrip_client")
+        self.thread.start()
         self.logger.info(f"NTRIP client started: {self.host}:{self.port}/{self.mountpoint}")
 
     def stop(self):
         """Stop the NTRIP client."""
-        self._stop_event.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=5.0)
+        self.stop_event.set()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=5.0)
         self.logger.info("NTRIP client stopped.")
 
     @property
     def is_connected(self):
-        return self._connected
+        return self.connected
 
     @property
     def bytes_received(self):
-        return self._bytes_received
+        return self.bytes_received
 
-    def _build_request(self):
+    def build_request(self):
         credentials = base64.b64encode(
             f"{self.username}:{self.password}".encode()
         ).decode()
@@ -73,15 +73,30 @@ class NtripClient:
         )
         return request.encode()
 
-    def _connect(self):
+    def connect(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(10.0)
         sock.connect((self.host, self.port))
 
-        sock.sendall(self._build_request())
+        sock.sendall(self.build_request())
 
-        # Send GGA position so caster can select nearest base station
-        gga = "$GPGGA,000000.00,3723.9000,N,12158.7000,W,1,12,1.0,0.0,M,0.0,M,,*47\r\n"
+        if self.position_callback:
+            lat, lon, alt = self.position_callback()
+        else:
+            lat, lon, alt = 0.0, 0.0, 0.0
+
+        lat_deg = int(abs(lat))
+        lat_min = (abs(lat) - lat_deg) * 60
+        lat_str = f"{lat_deg:02d}{lat_min:07.4f}"
+        lat_hem = "N" if lat >= 0 else "S"
+
+        lon_deg = int(abs(lon))
+        lon_min = (abs(lon) - lon_deg) * 60
+        lon_str = f"{lon_deg:03d}{lon_min:07.4f}"
+        lon_hem = "E" if lon >= 0 else "W"
+
+        gga = f"$GPGGA,000000.00,{lat_str},{lat_hem},{lon_str},{lon_hem},1,12,1.0,{alt:.1f},M,0.0,M,,*00\r\n"
+        sock.sendall(gga.encode())
         sock.sendall(gga.encode())
 
         # Read response - NTRIP v1 may not send \r\n\r\n
@@ -104,32 +119,32 @@ class NtripClient:
         leftover = response.split(b"\r\n", 1)[1] if b"\r\n" in response else b""
         return sock, leftover
 
-    def _run(self):
+    def run(self):
         """Main loop: connect, stream RTCM, reconnect on failure."""
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             sock = None
             try:
-                self._connected = False
-                sock, leftover = self._connect()
+                self.connected = False
+                sock, leftover = self.connect()
                 sock.settimeout(5.0)
-                self._connected = True
+                self.connected = True
 
                 # Write any leftover data from header read
                 if leftover:
-                    self._write_to_serial(leftover)
+                    self.write_to_serial(leftover)
 
                 # Stream RTCM data
-                while not self._stop_event.is_set():
+                while not self.stop_event.is_set():
                     try:
                         data = sock.recv(self.BUFFER_SIZE)
                         if not data:
                             raise ConnectionError("NTRIP caster closed connection")
-                        self._write_to_serial(data)
+                        self.write_to_serial(data)
                     except socket.timeout:
                         continue  # Normal, just retry
 
             except Exception as e:
-                self._connected = False
+                self.connected = False
                 self.logger.warning(
                     f"NTRIP connection error: {e}. "
                     f"Reconnecting in {self.RECONNECT_DELAY}s..."
@@ -140,17 +155,17 @@ class NtripClient:
                         sock.close()
                     except Exception:
                         pass
-                self._connected = False
+                self.connected = False
 
             # Wait before reconnecting
-            self._stop_event.wait(self.RECONNECT_DELAY)
+            self.stop_event.wait(self.RECONNECT_DELAY)
 
-    def _write_to_serial(self, data):
+    def write_to_serial(self, data):
         """Write RTCM bytes to the serial port and publish to ROS topic."""
         try:
             if self.serial_port and self.serial_port.is_open:
                 self.serial_port.write(data)
-                self._bytes_received += len(data)
+                self.bytes_received += len(data)
                 self.logger.debug(f"Injected {len(data)} RTCM bytes to device")
                 # Publish to ROS topic if callback is set
                 if self.rtcm_callback:

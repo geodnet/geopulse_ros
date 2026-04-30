@@ -20,9 +20,9 @@ services:
       - NTRIP_HOST=rtk.geodnet.com
       - NTRIP_PORT=2101
       - NTRIP_MOUNTPOINT=AUTO
-      - NTRIP_USERNAME=nithya #replace NTRIP username if required
-      - NTRIP_PASSWORD=123456 #replace NTRIP password if required
-    network_mode: host
+      - NTRIP_USERNAME=hyfix #replace with NTRIP username
+      - NTRIP_PASSWORD=hyfix #replace with NTRIP password
+    network_mode: host if required
     restart: unless-stopped
     volumes:
       - ${BAG_OUTPUT_DIR:-./bags}:/bags
