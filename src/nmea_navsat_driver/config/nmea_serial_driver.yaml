@@ -7,5 +7,5 @@ nmea_serial_driver:
     ntrip_host: "rtk.geodnet.com"
     ntrip_port: 2101
     ntrip_mountpoint: "AUTO"
-    ntrip_username: "nithya" #replace NTRIP username if required
-    ntrip_password: "123456" #replace NTRIP password if required
+    ntrip_username: "hyfix" #replace with NTRIP username
+    ntrip_password: "hyfix" #replace with NTRIP password

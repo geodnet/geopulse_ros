@@ -84,6 +84,11 @@ class NMEASerialNode(Node):
                 serial_port=self.serial_port,
                 logger=self.get_logger(),
                 rtcm_callback=self.driver.handle_rtcm,
+                position_callback=lambda: (
+                    self.driver.current_fix.latitude,
+                    self.driver.current_fix.longitude,
+                    self.driver.current_fix.altitude,
+                ),
             )
             self.ntrip_client.start()
             self.get_logger().info(
@@ -93,10 +98,6 @@ class NMEASerialNode(Node):
             self.get_logger().info("NTRIP not configured — running without corrections")
 
         self.timer = self.create_timer(0.01, self.read_serial)
-
-        # Status timer — logs NTRIP stats every 30 seconds
-        if self.ntrip_client:
-            self.status_timer = self.create_timer(30.0, self.log_ntrip_status)
 
         self.get_logger().info(f"NMEA Driver initialized with frame_id: {frame_id}")
 
