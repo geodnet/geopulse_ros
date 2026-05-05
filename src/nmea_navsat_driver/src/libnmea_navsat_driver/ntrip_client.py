@@ -23,7 +23,7 @@ class NtripClient:
     BUFFER_SIZE = 4096
     RECONNECT_DELAY = 5.0  # seconds between reconnect attempts
 
-    def __init__(self, host, port, mountpoint, username, password, serial_port, logger=None, rtcm_callback=None):
+    def __init__(self, host, port, mountpoint, username, password, serial_port, logger=None, rtcm_callback=None, position_callback=None):
         self.host = host
         self.port = port
         self.mountpoint = mountpoint
@@ -34,9 +34,10 @@ class NtripClient:
 
         self.thread = None
         self.stop_event = threading.Event()
-        self.bytes_received = 0
         self.connected = False
+        self.bytes_received = 0
         self.rtcm_callback = rtcm_callback
+        self.position_callback = position_callback
 
     def start(self):
         """Start the NTRIP client in a background thread."""
@@ -55,10 +56,6 @@ class NtripClient:
     @property
     def is_connected(self):
         return self.connected
-
-    @property
-    def bytes_received(self):
-        return self.bytes_received
 
     def build_request(self):
         credentials = base64.b64encode(
@@ -96,7 +93,6 @@ class NtripClient:
         lon_hem = "E" if lon >= 0 else "W"
 
         gga = f"$GPGGA,000000.00,{lat_str},{lat_hem},{lon_str},{lon_hem},1,12,1.0,{alt:.1f},M,0.0,M,,*00\r\n"
-        sock.sendall(gga.encode())
         sock.sendall(gga.encode())
 
         # Read response - NTRIP v1 may not send \r\n\r\n
