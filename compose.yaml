@@ -22,7 +22,7 @@ services:
       - NTRIP_MOUNTPOINT=AUTO
       - NTRIP_USERNAME=hyfix #replace with NTRIP username
       - NTRIP_PASSWORD=hyfix #replace with NTRIP password
-    network_mode: host if required
+    network_mode: host
     restart: unless-stopped
     volumes:
       - ${BAG_OUTPUT_DIR:-./bags}:/bags
