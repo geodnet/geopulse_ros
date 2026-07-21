@@ -4,11 +4,12 @@ NTRIP client for injecting RTCM corrections into a GNSS device via serial port.
 Connects to an NTRIP caster, streams RTCM data, and writes it to the serial port.
 """
 
-import socket
 import base64
+import contextlib
+import logging
+import socket
 import threading
 import time
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,20 @@ class NtripClient:
     NTRIP_VERSION = "2.0"
     BUFFER_SIZE = 4096
     RECONNECT_DELAY = 5.0  # seconds between reconnect attempts
+    GGA_INTERVAL_SECONDS = 10.0
 
-    def __init__(self, host, port, mountpoint, username, password, serial_port, logger=None, rtcm_callback=None, position_callback=None):
+    def __init__(
+        self,
+        host,
+        port,
+        mountpoint,
+        username,
+        password,
+        serial_port,
+        logger=None,
+        rtcm_callback=None,
+        position_callback=None,
+    ):
         self.host = host
         self.port = port
         self.mountpoint = mountpoint
@@ -58,9 +71,7 @@ class NtripClient:
         return self.connected
 
     def build_request(self):
-        credentials = base64.b64encode(
-            f"{self.username}:{self.password}".encode()
-        ).decode()
+        credentials = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
 
         request = (
             f"GET /{self.mountpoint} HTTP/1.0\r\n"
@@ -70,17 +81,23 @@ class NtripClient:
         )
         return request.encode()
 
-    def connect(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(10.0)
-        sock.connect((self.host, self.port))
-
-        sock.sendall(self.build_request())
-
+    def build_gga(self):
+        """Build a current, checksummed GGA sentence for the caster."""
         if self.position_callback:
             lat, lon, alt = self.position_callback()
         else:
             lat, lon, alt = 0.0, 0.0, 0.0
+
+        # Avoid emitting malformed coordinates while the receiver is acquiring a fix.
+        lat = float(lat)
+        lon = float(lon)
+        alt = float(alt)
+        if not -90.0 <= lat <= 90.0:
+            lat = 0.0
+        if not -180.0 <= lon <= 180.0:
+            lon = 0.0
+        if not -10000.0 <= alt <= 100000.0:
+            alt = 0.0
 
         lat_deg = int(abs(lat))
         lat_min = (abs(lat) - lat_deg) * 60
@@ -92,8 +109,25 @@ class NtripClient:
         lon_str = f"{lon_deg:03d}{lon_min:07.4f}"
         lon_hem = "E" if lon >= 0 else "W"
 
-        gga = f"$GPGGA,000000.00,{lat_str},{lat_hem},{lon_str},{lon_hem},1,12,1.0,{alt:.1f},M,0.0,M,,*00\r\n"
-        sock.sendall(gga.encode())
+        utc_time = time.strftime("%H%M%S.00", time.gmtime())
+        body = f"GPGGA,{utc_time},{lat_str},{lat_hem},{lon_str},{lon_hem},1,12,1.0,{alt:.1f},M,0.0,M,,"
+        checksum = 0
+        for character in body:
+            checksum ^= ord(character)
+
+        return f"${body}*{checksum:02X}\r\n".encode()
+
+    def send_gga(self, sock):
+        """Send the latest rover position to the NTRIP caster."""
+        sock.sendall(self.build_gga())
+        self.logger.debug("Sent GGA position to NTRIP caster")
+
+    def connect(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10.0)
+        sock.connect((self.host, self.port))
+
+        sock.sendall(self.build_request())
 
         # Read response - NTRIP v1 may not send \r\n\r\n
         response = b""
@@ -116,7 +150,7 @@ class NtripClient:
         return sock, leftover
 
     def run(self):
-        """Main loop: connect, stream RTCM, reconnect on failure."""
+        """Main loop: connect, stream RTCM, send GGA, and reconnect on failure."""
         while not self.stop_event.is_set():
             sock = None
             try:
@@ -125,32 +159,35 @@ class NtripClient:
                 sock.settimeout(5.0)
                 self.connected = True
 
+                # AUTO/nearest-base mountpoints require a fresh rover position.
+                self.send_gga(sock)
+                next_gga_at = time.monotonic() + self.GGA_INTERVAL_SECONDS
+
                 # Write any leftover data from header read
                 if leftover:
                     self.write_to_serial(leftover)
 
-                # Stream RTCM data
+                # Stream RTCM data and refresh GGA before the caster's timeout.
                 while not self.stop_event.is_set():
+                    if time.monotonic() >= next_gga_at:
+                        self.send_gga(sock)
+                        next_gga_at = time.monotonic() + self.GGA_INTERVAL_SECONDS
+
                     try:
                         data = sock.recv(self.BUFFER_SIZE)
                         if not data:
                             raise ConnectionError("NTRIP caster closed connection")
                         self.write_to_serial(data)
-                    except socket.timeout:
+                    except TimeoutError:
                         continue  # Normal, just retry
 
             except Exception as e:
                 self.connected = False
-                self.logger.warning(
-                    f"NTRIP connection error: {e}. "
-                    f"Reconnecting in {self.RECONNECT_DELAY}s..."
-                )
+                self.logger.warning(f"NTRIP connection error: {e}. Reconnecting in {self.RECONNECT_DELAY}s...")
             finally:
                 if sock:
-                    try:
+                    with contextlib.suppress(Exception):
                         sock.close()
-                    except Exception:
-                        pass
                 self.connected = False
 
             # Wait before reconnecting
